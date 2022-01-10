@@ -1,2 +1,2 @@
-# traffic-ode
-Traffic Forecasting using Graph Neural Diffusion (w.i.p.)
+# Traffic Forecasting with Graph Neural Diffusion
+Master Thesis - Traffic Forecasting using Graph Neural Diffusion (work in progress).
