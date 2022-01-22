@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.nn import MessagePassing
 
-from ode.ode_block_base import OdeBlock
+from ode.ode_blocks import OdeBlock
 from ode.reg_funcs import all_reg_funcs
 
 

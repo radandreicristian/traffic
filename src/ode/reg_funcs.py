@@ -95,3 +95,13 @@ all_reg_funcs = {
     "jacobian_norm2": jacobian_frobeniuns_reg_func,
     "kinetic_energy": kinetic_energy_reg_func
 }
+
+if __name__ == '__main__':
+    x = torch.tensor([[1., 2., 3.],
+                      [2., 3., 4.]], requires_grad=True)
+    # t = torch.tensor([0., 1.], requires_grad=True)
+    dx = torch.tensor([1., 1., 1.], requires_grad=True)
+    directional_derivative = torch.autograd.grad(dx, x, dx,
+                                                 create_graph=True,
+                                                 allow_unused=True)
+    print(directional_derivative)
