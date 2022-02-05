@@ -1,22 +1,43 @@
 """
 Regularization functions for ODEs.
 
-Source: GRAND/BLEND Code Repository (Apache License)
+Adapted/improved/copied from GRAND/BLEND Code Repository (Apache License)
 https://github.com/twitter-research/graph-neural-pde/blob/main/src/regularized_ODE_function.py
 """
+from typing import Tuple, List, Callable
 
 import torch.autograd
 
 
+def create_reg_funcs(opt: dict) -> Tuple[List[Callable], List[float]]:
+    """
+    Create regularization functions as specified by the provided options.
+
+    :param opt: A dictionary of options.
+    :type opt: dict
+    :return: A list of functions and a list of their coefficients.
+    :rtype: Tuple[List[Callable], List[float]]
+    """
+    reg_funcs = []
+    reg_coeffs = []
+
+    for name, reg_func in all_reg_funcs.items():
+        if opt[name]:
+            reg_funcs.append(reg_func)
+            reg_coeffs.append(opt[name])
+    return reg_funcs, reg_coeffs
+
+
 def directional_derivative_reg_func(x: torch.Tensor,
                                     t: torch.Tensor,
-                                    dx: torch.Tensor) -> torch.Tensor:
+                                    dx: torch.Tensor,
+                                    unused_context) -> torch.Tensor:
     """
     Todo.
 
-    :param x:
-    :param t:
-    :param dx:
+    :param x: An array containing the values of a function at specific time indices.
+    :param t: The time indices.
+    :param dx: The derivative of the function at the specific time indices.
     :return: The regularization term.
     """
     del t
@@ -29,13 +50,14 @@ def directional_derivative_reg_func(x: torch.Tensor,
 
 def total_derivative_reg_func(x: torch.Tensor,
                               t: torch.Tensor,
-                              dx: torch.Tensor) -> torch.Tensor:
+                              dx: torch.Tensor,
+                              unused_context) -> torch.Tensor:
     """
     Todo.
 
-    :param x:
-    :param t:
-    :param dx:
+    :param x: An array containing the values of a function at specific time indices.
+    :param t: The time indices.
+    :param dx: The derivative of the function at the specific time indices.
     :return: The regularization term.
     """
     directional_dx = torch.autograd.grad(dx, x, dx,
@@ -51,18 +73,20 @@ def total_derivative_reg_func(x: torch.Tensor,
         return .5 * derivative.pow(2).view(x.size(0), -1).mean(dim=-1)
     except RuntimeError as e:
         if 'One of the differentiated Tensors' in e.__str__():
-            raise RuntimeError('No partial derivative wrt time. Use "directional_derivative" regularizer instead')
+            raise RuntimeError(
+                'No partial derivative wrt time. Use "directional_derivative" regularizer instead')
 
 
 def jacobian_frobeniuns_reg_func(x: torch.Tensor,
                                  t: torch.Tensor,
-                                 dx: torch.Tensor) -> torch.Tensor:
+                                 dx: torch.Tensor,
+                                 unused_context) -> torch.Tensor:
     """
     Regularization of the Jacobian with its Frobenius norm: https://arxiv.org/pdf/2002.02798.pdf
 
-    :param x:
-    :param t:
-    :param dx:
+    :param x: An array containing the values of a function at specific time indices.
+    :param t: The time indices.
+    :param dx: The derivative of the function at the specific time indices.
     :return: The regularization term.
     """
     del t
@@ -74,7 +98,8 @@ def jacobian_frobeniuns_reg_func(x: torch.Tensor,
 
 def kinetic_energy_reg_func(x: torch.Tensor,
                             t: torch.Tensor,
-                            dx: torch.Tensor) -> torch.Tensor:
+                            dx: torch.Tensor,
+                            unused_context) -> torch.Tensor:
     """
     Quadratic cost / kinetic energy regularization: https://arxiv.org/pdf/2002.02798.pdf
 
@@ -97,8 +122,7 @@ all_reg_funcs = {
 }
 
 if __name__ == '__main__':
-    x = torch.tensor([[1., 2., 3.],
-                      [2., 3., 4.]], requires_grad=True)
+    x = torch.tensor([1., 2., 3.], requires_grad=True)
     # t = torch.tensor([0., 1.], requires_grad=True)
     dx = torch.tensor([1., 1., 1.], requires_grad=True)
     directional_derivative = torch.autograd.grad(dx, x, dx,
