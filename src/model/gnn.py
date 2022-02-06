@@ -24,7 +24,13 @@ class GNN(BaseGNN):
 
         self.n_previous_steps = opt['n_previous_steps']
         self.n_future_steps = opt['n_future_steps']
-        n_nodes = dataset[0].x.size()[1]  # Todo maybe find a better way to do this
+
+        in_memory = opt['in_memory']
+
+        if in_memory:
+            n_nodes = dataset[0][0].size()[1]  # Todo maybe find a better way to do this
+        else:
+            n_nodes = dataset[0].x.size()[1]
 
         n_features = opt['n_features']
 

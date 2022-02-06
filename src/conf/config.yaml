@@ -3,6 +3,7 @@
 # The name of the dataset - Either "metr_la" or "pems_bay" (wip)
 dataset: metr_la
 
+in_memory: True
 # Random walk (rw) or symmetric gcn norm (gcn)
 # Todo - Read more on this
 data_norm: rw
@@ -13,6 +14,9 @@ self_loop_weight: 1.
 valid_percentage: .2
 
 test_percentage: .2
+
+sample_train: True
+sample_train_factor: 1.
 
 train_batch_size: 64
 test_batch_size: 64
@@ -41,16 +45,10 @@ use_batch_norm: False
 optimizer: adam
 
 # Learning rate of the optimizer
-lr: 1e-2
+lr: 2e-2
 
 # Weight decay
 weight_decay: 5e-4
-
-# Learning rate
-learning_rate: 1e-2
-
-# Weight decay
-decay: 5e-4
 
 # Number of epochs for training
 n_epochs: 2
@@ -100,7 +98,7 @@ max_iters: 100
 adjoint: True
 
 # What solver to use when using adjoint method (str, adaptive_heun/dopri5/euler/rk4/midpoint)
-adjoint_solver: adaptive_heun
+adjoint_solver: dopri5
 adjoint_step_size: 1.
 
 # Tolerance scale - Multiplier for absolute and relative tolerance (float)
@@ -110,8 +108,8 @@ tol_scale_adjoint: 1.
 # Number of ODE blocks to run
 n_ode_blocks: 1
 
-# Maximum number of function evaluations in each epoch (int) {max_nfe}
-max_func_evals: 1000
+# Maximum number of function evaluations in each epoch (int) {<max_nfe>}
+max_func_evals: 100
 
 # Use early stopping of the ODE integrator on inference (bool) {no_early}
 early_stopping_integrator: False

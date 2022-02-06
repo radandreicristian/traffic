@@ -36,7 +36,10 @@ class MetrLaDataModule(pl.LightningDataModule):
         last_valid_index = int((train_percentage + valid_percentage) * dataset_len)
 
         train_indices = range(0, last_train_index)
-        train_indices = np.random.choice(train_indices, int(.5 * len(train_indices)), replace=False)
+        if self.opt['sample_train']:
+            factor = self.opt['sample_train_factor']
+            rng = np.random.default_rng(21)
+            train_indices = rng.choice(train_indices, int(factor * len(train_indices)), replace=False)
         valid_indices = range(last_train_index, last_valid_index)
         test_indices = range(last_valid_index, dataset_len)
         print("n train samples", len(train_indices))
