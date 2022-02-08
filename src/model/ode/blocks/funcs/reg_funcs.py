@@ -91,8 +91,12 @@ def jacobian_frobeniuns_reg_func(x: torch.Tensor,
     """
     del t
     sum_diag = torch.tensor([0.0])
-    for i in range(x.shape[1]):
-        sum_diag += torch.autograd.grad(dx[:, i].sum(), x, create_graph=True)[0].contiguous()[:, i].contiguous()
+    for j in range(x.shape[0]):
+        x_ = x[j, :, :]
+        dx_ = dx[j, :, :]
+        for i in range(x_.shape[1]):
+            sum_diag += torch.autograd.grad(dx_[:, i].sum(), x_, create_graph=True, allow_unused=True)[0].contiguous()[
+                        :, i].contiguous()
     return sum_diag.contiguous()
 
 

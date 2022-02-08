@@ -42,7 +42,7 @@ class BaseOdeBlock(nn.Module):
 
         self.opt: dict = opt
         self.t: torch.Tensor = t
-        self.aug_dim: int = 2 if opt['augment'] else 1
+        self.aug_dim: int = 2 if opt['use_augmentation'] else 1
         self.d_hidden = opt['d_hidden']
         self.n_nodes = n_nodes
         self.in_features = self.out_features = self.aug_dim * self.d_hidden

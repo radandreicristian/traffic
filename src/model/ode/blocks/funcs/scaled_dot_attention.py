@@ -42,7 +42,7 @@ class ScaledDotProductOdeFunc(BaseOdeFunc):
             self.edge_index, self.edge_attr = edge_index, edge_attr
 
         # self.batch_size = opt['batch_size']
-        self.d_hidden = opt['d_hidden']
+        self.in_features = in_features
 
         self.edge_index = self.edge_index.to(device)
         self.edge_attr = self.edge_attr.to(device)
@@ -75,7 +75,7 @@ class ScaledDotProductOdeFunc(BaseOdeFunc):
         attention, (values, _) = self.attention_layer(x, self.edge_index)
         ax = self.apply_attention(x, attention, values)
 
-        ax = torch.reshape(ax, [-1, 207, self.d_hidden])
+        ax = torch.reshape(ax, [-1, 207, self.in_features])
 
         if self.opt['alpha_sigmoid']:
             alpha = torch.sigmoid(self.alpha_train)

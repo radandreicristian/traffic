@@ -50,16 +50,16 @@ class AttentionOdeBlock(BaseOdeBlock):
                                            num_nodes=n_nodes,
                                            dtype=torch.float32)
 
-        self.ode_func.edge_index = edge_index.cuda()
-        self.ode_func.edge_attr = edge_attr.cuda()
+        self.ode_func.edge_index = edge_index.to(device)
+        self.ode_func.edge_attr = edge_attr.to(device)
 
         ode_integrator = odeint_adjoint if opt['adjoint'] else odeint
         self.train_integrator = ode_integrator
         self.test_integrator = ode_integrator
 
         self.set_tol()
-        self.attention_layer = SparseGraphTransformerAttention(in_features=self.d_hidden,
-                                                               out_features=self.d_hidden,
+        self.attention_layer = SparseGraphTransformerAttention(in_features=self.in_features,
+                                                               out_features=self.out_features,
                                                                opt=opt,
                                                                edge_attr=self.ode_func.edge_attr,
                                                                device=device)

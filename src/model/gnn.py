@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
@@ -41,9 +40,6 @@ class GNN(BaseGNN):
 
         time_tensor = torch.tensor([0, self.T])
 
-        self.temp_linear = nn.Linear(in_features=self.n_previous_steps,
-                                     out_features=1)
-
         # This is implemented in the datasets that we can choose from so it's safe
 
         self.ode_block = get_ode_block(opt)(ode_func=self.function,
@@ -59,20 +55,24 @@ class GNN(BaseGNN):
                 x: torch.Tensor,
                 pos_embedding: torch.Tensor = None) -> torch.Tensor:
 
-        # x (batch_size, n_previous, n_nodes, 1)
+        # x (batch_size, n_previous=12, n_nodes=207, n_features=1)
 
         if self.opt['use_beltrami']:
             raise NotImplementedError('Beltrami not yet implemented.')
         else:
             x = f.dropout(x, self.opt['p_dropout_in'], training=self.training)
             # x (batch_size, n_nodes, n_features, d_hidden)
-            x = self.fc_in(x)
 
         # x (batch_size, n_nodes, d_hidden, n_previous)
-        x = rearrange(x, 'b p n f -> b n f p')
+
+        # x (batch_size, n_previous, n_nodes)
+        x = torch.squeeze(x)
+
+        # x (batch_size, n_nodes, n_previous)
+        x = rearrange(x, 'b p n -> b n p')
 
         # x (batch_size, n_nodes, d_hidden)
-        x = torch.squeeze(self.temp_linear(f.relu(x)))
+        x = self.fc_in(x)
 
         if self.opt['use_mlp_in']:
             x = f.dropout(x, self.opt['p_dropout_model'], training=self.training)
@@ -82,9 +82,10 @@ class GNN(BaseGNN):
 
         if self.opt['use_batch_norm']:
             # x (batch_size, n_nodes, d_hidden)
-            x = self.bn_in(x)
+            x = rearrange(x, 'b n h -> b h n')
+            x = rearrange(self.bn_in(x), 'b h n -> b n h')
 
-        if self.opt['augment']:
+        if self.opt['use_augmentation']:
             c_aux = torch.zeros(x.shape).cuda()
             # x (batch_size, n_nodes, d_hidden * 2)
             x = torch.cat([x, c_aux], dim=2)
@@ -96,7 +97,7 @@ class GNN(BaseGNN):
         else:
             z = self.ode_block(x)
 
-        if self.opt['augment']:
+        if self.opt['use_augmentation']:
             # z (batch_size, n_nodes, d_hidden)
             z = torch.split(z, x.shape[2] // 2, dim=2)[0]
 
@@ -109,7 +110,11 @@ class GNN(BaseGNN):
 
         z = f.dropout(z, self.opt['p_dropout_model'])
 
-        # z (batch_size, n_nodes) - Per node final prediction
-        z = torch.squeeze(self.regressor(z))
+        # z (batch_size, n_nodes, n_future) - Per node final prediction
+        z = self.regressor(z)
+
+        del x
+        torch.cuda.empty_cache()
+        z = rearrange(z, 'b n p -> b p n')
 
         return z

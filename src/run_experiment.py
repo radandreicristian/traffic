@@ -13,6 +13,12 @@ from src.data.inmemorydatamodule import MetrLaInMemoryDataModule
 from src.model.gnn import GNN
 from src.model.optimizers import get_optimizer
 
+indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
+
+
+def pretty_rmses(rmses: dict):
+    return " ".join([f"{k} min.: {v:.2f} " for k, v in rmses.items()])
+
 
 def print_model_params(model):
     print(model)
@@ -33,11 +39,14 @@ def train_step(model: torch.nn.Module,
     model.train()
     optimizer.zero_grad()
     x, y = batch
-    y = torch.squeeze(y[:, -1, :, :])
+
+    # (batch_size, n_future, n_nodes)
+    y = torch.squeeze(y)
     y_hat = model(x)
 
     loss = mse_loss(y, y_hat)
-    rmse = torch.sqrt(torch.mean((y - y_hat) ** 2)).item()
+
+    rmses = {k: torch.sqrt(torch.mean((y[:, v, :] - y_hat[:, v, :]) ** 2)).item() for k, v in indices.items()}
 
     if model.ode_block.n_reg > 0:
         reg_states = tuple(torch.mean(rs) for rs in model.reg_states)
@@ -51,7 +60,10 @@ def train_step(model: torch.nn.Module,
     optimizer.step()
     model.reset_n_func_eval()
 
-    return loss.item(), rmse
+    del x, y, y_hat, batch
+    torch.cuda.empty_cache()
+
+    return loss.item(), rmses
 
 
 @torch.no_grad()
@@ -60,13 +72,13 @@ def eval_step(model: torch.nn.Module,
               pos_encoding=None):
     model.eval()
     x, y = batch
-    y = torch.squeeze(y[:, -1, :, :])
+    y = torch.squeeze(y)
 
     y_hat = model(x)
     loss = mse_loss(y, y_hat)
-    rmse = torch.sqrt(torch.mean((y - y_hat) ** 2)).item()
+    rmses = {k: torch.sqrt(torch.mean((y[:, v, :] - y_hat[:, v, :]) ** 2)).item() for k, v in indices.items()}
 
-    return loss.item(), rmse
+    return loss.item(), rmses
 
 
 @hydra.main(config_path='conf',
@@ -118,17 +130,17 @@ def main(opt: DictConfig):
                                     optimizer=optimizer,
                                     batch=batch)
             end = time.time()
-            print(f'[Train]: Epoch {epoch}, Batch {idx}, Loss {loss}, RMSE {rmse}, Time {int(end - start)}s')
+            if idx % 10 == 0:
+                print(f'[Train]: Epoch {epoch}, Batch {idx}, Loss {loss}, RMSE {pretty_rmses(rmse)}, Time'
+                      f' {int(end - start)}s')
 
         val_rmses = []
         for idx, batch in enumerate(valid_dataloader):
-            start = time.time()
             batch = [e.to(device) for e in batch]
-            loss, rmse = eval_step(model=model,
-                                   batch=batch)
-            end = time.time()
+            loss, rmses = eval_step(model=model,
+                                    batch=batch)
+            rmse = rmses[60]  # Todo
             val_rmses.append(rmse)
-            print(f'[Valid]: Epoch {epoch}, Batch {idx}, Loss {loss}, RMSE {rmse}, Time {int(end - start)}s')
         val_rmse = sum(val_rmses) / len(val_rmses)
 
         print(f'[Valid]: Epoch {epoch}, Valid RMSE {val_rmse}')
@@ -141,8 +153,9 @@ def main(opt: DictConfig):
     test_rmses = []
     for idx, batch in enumerate(test_dataloader):
         batch = [e.to(device) for e in batch]
-        loss, rmse = eval_step(model=best_model,
-                               batch=batch)
+        loss, rmses = eval_step(model=best_model,
+                                batch=batch)
+        rmse = rmses[60]  # Todo
         test_rmses.append(rmse)
     test_rmse = sum(test_rmses) / len(test_rmses)
     print(f'[Test]: RMSE {test_rmse}')

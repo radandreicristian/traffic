@@ -18,8 +18,8 @@ test_percentage: .2
 sample_train: True
 sample_train_factor: 1.
 
-train_batch_size: 64
-test_batch_size: 64
+train_batch_size: 32
+test_batch_size: 32
 ##################################### Model Configuration ##########################################
 
 # Size of the hidden feature vectors in the model (int)
@@ -35,23 +35,22 @@ use_mlp_out: True
 p_dropout_in: .5
 
 # Dropout rate of the model (float, <1.)
-p_dropout_model: .0
+p_dropout_model: .3
 
 # Batch normalization (bool) {batch_norm}
-# Todo - Fix this :)
-use_batch_norm: False
+use_batch_norm: True
 
 # Optimizer (str, sgd/rmsprop/adam/adamax)
-optimizer: adam
+optimizer: adamax
 
 # Learning rate of the optimizer
-lr: 2e-2
+lr: 5e-2
 
 # Weight decay
-weight_decay: 5e-4
+weight_decay: 5e-3
 
 # Number of epochs for training
-n_epochs: 2
+n_epochs: 30
 
 # The factor of matrix A - Used only in C(ontinuous)GNN  src/CGNN.py (float <= 1.)
 # Todo - Read more on this
@@ -61,7 +60,7 @@ alpha: 1.
 alpha_dim: sc
 
 # Apply sigmoid before multiplying by alpha (bool)
-alpha_sigmoid: False
+alpha_sigmoid: True
 
 # Beta dimension, scalar or vector (str, sc/vc)
 beta_dim: sc
@@ -78,11 +77,10 @@ add_source: True
 ###################################### ODE Configuration ###########################################
 
 # End time of the ODE integrator (float)
-time: 1.
+time: 10.
 
 # Augment: double the length of feature vectors by appending zeros to stabilize ODE learning (bool)
-# Todo - Read more on this
-augment: False
+use_augmentation: True
 
 # Numerical solver (str, dopri5/euler/rk4/midpoint) {method}
 solver: dopri5
@@ -95,7 +93,7 @@ max_iters: 100
 
 # Use adjoint ODE method to reduce memory (bool)
 # Todo - Read more on this
-adjoint: True
+adjoint: False
 
 # What solver to use when using adjoint method (str, adaptive_heun/dopri5/euler/rk4/midpoint)
 adjoint_solver: dopri5
@@ -109,7 +107,7 @@ tol_scale_adjoint: 1.
 n_ode_blocks: 1
 
 # Maximum number of function evaluations in each epoch (int) {<max_nfe>}
-max_func_evals: 100
+max_func_evals: 2000
 
 # Use early stopping of the ODE integrator on inference (bool) {no_early}
 early_stopping_integrator: False
@@ -126,16 +124,16 @@ max_test_steps: 100
 leaky_relu_slope: .2
 
 # Dropout of attention weights
-attention_dropout: .0
+attention_dropout: .2
 
 # Number of attention heads (int) {heads}
-n_heads: 4
+n_heads: 8
 
 # Attention normalization index (int, 0/1) - 0: by rows, 1: by cols
 attention_norm_idx: 0
 
 # Projection size before applying attention (int)
-d_hidden_attention: 64
+d_hidden_attention: 32
 
 # Apply a feature transformation xW to the ODE (bool)
 mix_features: True
@@ -152,7 +150,7 @@ square_plus: False
 ################################### Regularization Configuration ###################################
 jacobian_norm2: False # int_t ||df/dx||_F^2
 total_derivative: False # int_t ||df/dt||^2
-kinetic_energy: False # int_t ||f||_2^2
+kinetic_energy: 0.1 # int_t ||f||_2^2
 directional_derivative: False # int_t ||(df/dx)^T f||^2
 
 
@@ -161,7 +159,7 @@ n_previous_steps: 12
 
 n_future_steps: 12
 
-n_features: 1
+n_features: 12
 ##################################### Rewiring Configuration ######################################
 # TODO
 

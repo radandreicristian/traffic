@@ -11,8 +11,6 @@ def get_optimizer(opt: dict,
 
     :param opt: A configuration dictionary.
     :param params: Iterable or dictionary of tensors to be optimized.
-    :param lr: Learning rate of the optimizer.
-    :param weight_decay: Weight decay of the optimizer.
     :return: A PyTorch optimizer.
     """
     optimizer_name = opt['optimizer']

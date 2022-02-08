@@ -55,12 +55,12 @@ class BaseGNN(MessagePassing, ABC):
             self.mlp_out = nn.ModuleList([nn.Linear(in_features=self.d_hidden,
                                                     out_features=self.d_hidden)])
 
-        self.regressor = nn.Linear(self.d_hidden, 1)  # This is a regression task
+        self.regressor = nn.Linear(self.d_hidden, self.opt['n_future_steps'])  # This is a regression task
         # Todo - Do I need an activation at the end?
 
         if self.opt['use_batch_norm']:
             self.bn_in = torch.nn.BatchNorm1d(self.d_hidden)
-            self.bn_out = torch.nn.BatchNorm1d(self.d_hidden)
+            # self.bn_out = torch.nn.BatchNorm2d(self.n_previous_steps)
 
         self.reg_funcs, self.reg_coeffs = create_reg_funcs(opt=self.opt)
 
