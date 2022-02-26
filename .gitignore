@@ -9,6 +9,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+outputs
 develop-eggs/
 dist/
 downloads/
@@ -125,5 +126,10 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
+*/outputs
+
 # Pyre type checker
 .pyre/
+
+# Logs
+logs
