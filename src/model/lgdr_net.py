@@ -12,11 +12,15 @@ from src.model.ode.blocks.funcs import get_ode_function
 
 
 class LatentGraphDiffusionRecurrentNet(BaseGNN):
+    """
+    A latent graph diffusion recurrent net. There is a single diffusion layer, between a recurrent encoder and a
+    recurrent decoder.
+    """
 
     def __init__(self,
                  opt: dict,
                  dataset: torch_geometric.data.Dataset,
-                 device):
+                 device: torch.device) -> None:
         super(LatentGraphDiffusionRecurrentNet, self).__init__(opt=opt)
         self.device = device
         self.edge_index, self.edge_attr = dataset.get_adjacency_matrix()
@@ -34,8 +38,6 @@ class LatentGraphDiffusionRecurrentNet(BaseGNN):
 
         time_tensor = torch.tensor([0, self.T])
 
-        # This is implemented in the datasets that we can choose from so it's safe
-
         self.ode_block = get_ode_block(opt)(ode_func=self.function,
                                             reg_funcs=self.reg_funcs,
                                             opt=opt,
@@ -49,6 +51,7 @@ class LatentGraphDiffusionRecurrentNet(BaseGNN):
                        hidden_size=self.d_hidden,
                        num_layers=1,
                        batch_first=True)
+
         self.reg_states: Optional[List[Any]] = None
 
     def forward(self,
@@ -84,14 +87,10 @@ class LatentGraphDiffusionRecurrentNet(BaseGNN):
         x = x[:, -1, :, :]
 
         if self.opt['use_batch_norm']:
-            # x (batch_size, n_nodes, d_hidden)
-            x = rearrange(x, 'b n h -> b h n')
-            x = rearrange(self.bn_in(x), 'b h n -> b n h')
+            x = self.rearrange_batch_norm(x)
 
         if self.opt['use_augmentation']:
-            c_aux = torch.zeros(x.shape).cuda()
-            # x (batch_size, n_nodes, d_hidden * 2)
-            x = torch.cat([x, c_aux], dim=2)
+            x = self.augment_up(x)
 
         self.ode_block.set_x0(x)
 
@@ -101,8 +100,7 @@ class LatentGraphDiffusionRecurrentNet(BaseGNN):
             z = self.ode_block(x)
 
         if self.opt['use_augmentation']:
-            # z (batch_size, n_nodes, d_hidden)
-            z = torch.split(z, x.shape[2] // 2, dim=2)[0]
+            z = self.augment_down(z)
 
         z = f.relu(z)
 

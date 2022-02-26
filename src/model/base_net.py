@@ -9,10 +9,13 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+from einops import rearrange
 from torch_geometric.nn import MessagePassing
 
 from src.model.ode.blocks import BaseOdeBlock
 from src.model.ode.blocks.funcs.reg_funcs import create_reg_funcs
+
+from residual_layer import ResidualLinear
 
 
 class BaseGNN(MessagePassing, ABC):
@@ -25,7 +28,7 @@ class BaseGNN(MessagePassing, ABC):
         self.ode_block: Optional[BaseOdeBlock] = None
         self.opt = opt
         self.T = opt['time']
-
+        self.p_dropout = opt['p_dropout_model']
         # Todo - This is a regression task, so...
         # self.n_classes = dataset.num_classes
 
@@ -38,17 +41,14 @@ class BaseGNN(MessagePassing, ABC):
         self.d_hidden = opt['d_hidden']  # hidden_dim
 
         if self.opt['use_mlp_in']:
-            self.mlp_in = nn.ModuleList([nn.Linear(in_features=self.d_hidden,
-                                                   out_features=self.d_hidden),
-                                         nn.Linear(in_features=self.d_hidden,
-                                                   out_features=self.d_hidden)])
+            self.mlp_in = nn.ModuleList([ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout),
+                                         ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout)])
 
         if self.opt['use_mlp_out']:
-            self.mlp_out = nn.ModuleList([nn.Linear(in_features=self.d_hidden,
-                                                    out_features=self.d_hidden)])
+            self.mlp_out = nn.ModuleList([ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout),
+                                          ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout)])
 
         self.regressor = nn.Linear(self.d_hidden, 1)  # This is a regression task
-        # Todo - Do I need an activation at the end?
 
         if self.opt['use_batch_norm']:
             self.bn_in = torch.nn.BatchNorm1d(self.d_hidden)
@@ -84,6 +84,21 @@ class BaseGNN(MessagePassing, ABC):
     def reset(self):
         self.m1.reset_parameters()
         self.m2.reset_parameters()
+
+    def rearrange_batch_norm(self,
+                             tensor):
+        tensor = rearrange(tensor, 'batch nodes hid -> batch hid nodes')
+        return rearrange(self.bn_in(tensor), 'batch hid nodes -> batch nodes hid')
+
+    def augment_up(self,
+                   tensor):
+        zeros = torch.zeros(tensor.shape).to(self.device)
+        # h (batch_size, n_nodes, d_hidden * 2)
+        return torch.cat([tensor, zeros], dim=2)
+
+    @staticmethod
+    def augment_down(tensor):
+        return torch.split(tensor, tensor.shape[2] // 2, dim=2)[0]
 
     def __repr__(self):
         return self.__class__.__name__

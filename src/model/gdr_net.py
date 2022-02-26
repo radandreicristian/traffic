@@ -49,21 +49,6 @@ class GraphDiffusionRecurrentNet(BaseGNN):
 
         self.reg_states: Optional[List[Any]] = None
 
-    def rearrange_batch_norm(self,
-                             tensor):
-        tensor = rearrange(tensor, 'batch nodes hid -> batch hid nodes')
-        return rearrange(self.bn_in(tensor), 'batch hid nodes -> batch nodes hid')
-
-    def augment_up(self,
-                   tensor):
-        zeros = torch.zeros(tensor.shape).to(self.device)
-        # h (batch_size, n_nodes, d_hidden * 2)
-        return torch.cat([tensor, zeros], dim=2)
-
-    @staticmethod
-    def augment_down(tensor):
-        return torch.split(tensor, tensor.shape[2] // 2, dim=2)[0]
-
     def forward(self,
                 x: torch.Tensor,
                 pos_embedding: torch.Tensor = None) -> torch.Tensor:
@@ -85,13 +70,11 @@ class GraphDiffusionRecurrentNet(BaseGNN):
         if self.opt['use_mlp_in']:
             x = f.dropout(x, self.opt['p_dropout_model'], training=self.training)
             for layer in self.mlp_in:
-                # x (batch_size, n_previous, n_nodes, d_hidden)
-                x = f.dropout(x + layer(f.relu(x)), self.opt['p_dropout_model'], training=self.training)
+                x = layer(x)
 
         x = rearrange(x, 'batch time nodes hid -> time (batch nodes) hid')
 
         h_t = None
-        o_t = None
 
         # Take the input through the
         for i in range(self.n_previous_steps):
@@ -165,9 +148,7 @@ class GraphDiffusionRecurrentNet(BaseGNN):
 
             if self.opt['use_mlp_out']:
                 for layer in self.mlp_out:
-                    o_t = f.relu(layer(o_t))
-
-            o_t = f.dropout(o_t, self.opt['p_dropout_model'])
+                    o_t = layer(o_t)
 
             y[:, i, :] = torch.squeeze(self.regressor(o_t))
 

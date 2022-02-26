@@ -20,10 +20,10 @@ test_percentage: .2
 
 sample_train: True
 
-sample_train_factor: 1.
+sample_train_factor: 0.2
 
-train_batch_size: 128
-test_batch_size: 128
+train_batch_size: 32
+test_batch_size: 32
 ##################################### Model Configuration ##########################################
 
 # 'gdr' (graph diffusion recurrent net) or 'lgdr' (latent graph diffusion recurrent net)
@@ -84,7 +84,7 @@ add_source: True
 ###################################### ODE Configuration ###########################################
 
 # End time of the ODE integrator (float)
-time: 3.
+time: 2.
 
 # Augment: double the length of feature vectors by appending zeros to stabilize ODE learning (bool)
 use_augmentation: True
@@ -100,10 +100,10 @@ max_iters: 200
 
 # Use adjoint ODE method to reduce memory (bool)
 # Todo - Read more on this
-adjoint: True
+adjoint: False
 
 # What solver to use when using adjoint method (str, adaptive_heun/dopri5/euler/rk4/midpoint)
-adjoint_solver: rk4
+adjoint_solver: dopri5
 adjoint_step_size: 1.
 
 # Tolerance scale - Multiplier for absolute and relative tolerance (float)
