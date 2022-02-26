@@ -132,7 +132,7 @@ dmypy.json
 .pyre/
 
 # Logs
-logs
+logs/*
 
 # Idea
 .idea

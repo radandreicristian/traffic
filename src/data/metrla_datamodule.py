@@ -1,19 +1,26 @@
 from collections import Iterable
-from typing import Optional
+from typing import Optional, Callable
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
-from torch.utils.data import Subset, Dataset, DataLoader
-from torch_geometric.data import Data
+from torch.utils.data import Subset, DataLoader
+from torch_geometric.data import Data, Dataset
 
 
-class MetrLaInMemoryDataModule(pl.LightningDataModule):
+class MetrLaDataModule(pl.LightningDataModule):
+    """A data module that holds the dataloaders for the MetrLa dataset."""
+
     def __init__(self,
                  opt: dict,
-                 dataset):
-        super(MetrLaInMemoryDataModule, self).__init__()
+                 dataset: Dataset) -> None:
+        """
+        Initialize the DataModule.
+        :param opt: A dictionary of options.
+        :param dataset: The dataset object.
+        """
+        super(MetrLaDataModule, self).__init__()
 
         self.opt = opt
         self.dataset = dataset
@@ -24,9 +31,16 @@ class MetrLaInMemoryDataModule(pl.LightningDataModule):
         self.valid_dataset: Optional[Dataset] = None
         self.test_dataset: Optional[Dataset] = None
 
+        self.collate_fn: Optional[Callable] = None
         self.setup()
 
     def setup(self, stage: Optional[str] = None) -> None:
+        """
+        Sets up the DataModule.
+
+        :param stage: Unused.
+        :return: None.
+        """
         dataset_len = len(self.dataset)
         valid_percentage = self.opt['valid_percentage']
         test_percentage = self.opt['test_percentage']
@@ -40,6 +54,7 @@ class MetrLaInMemoryDataModule(pl.LightningDataModule):
             factor = self.opt['sample_train_factor']
             rng = np.random.default_rng(21)
             train_indices = rng.choice(train_indices, int(factor * len(train_indices)), replace=False)
+
         valid_indices = range(last_train_index, last_valid_index)
         test_indices = range(last_valid_index, dataset_len)
         print("n train samples", len(train_indices))
@@ -47,14 +62,43 @@ class MetrLaInMemoryDataModule(pl.LightningDataModule):
         self.valid_dataset = Subset(self.dataset, valid_indices)
         self.test_dataset = Subset(self.dataset, test_indices)
 
+        inmemory_data = self.opt.get('in_memory')
+
+        self.collate_fn = self.inmemory_collate_fn if inmemory_data else self.ondisk_collate_fn
+
     @staticmethod
-    def collate_fn(batch: Iterable[Data]):
+    def inmemory_collate_fn(batch: Iterable[Data]):
+        """
+        Splits the batch into tensors corresponding to the predictor (x) and the target (y) variables.
+
+        To be called when the data is loaded from the memory.
+        :param batch: A batch consisting of an iterable of Data points.
+        :return: A tuple containing the x and y tensors.
+        """
         x, y = zip(*batch)
         x = torch.stack([x_ for x_ in x])
         y = torch.stack([y_ for y_ in y])
         return x, y
 
+    @staticmethod
+    def ondisk_collate_fn(batch: Iterable[Data]):
+        """
+        Splits the batch into tensors corresponding to the predictor (x) and the target (y) variables.
+
+        To be called when the data is loaded from the disk memory.
+        :param batch: A batch consisting of an iterable of Data points.
+        :return: A tuple containing the x and y tensors.
+        """
+        x = torch.stack([data.x for data in batch])
+        y = torch.stack([data.y for data in batch])
+        return x, y
+
     def train_dataloader(self) -> TRAIN_DATALOADERS:
+        """
+        Create a Dataloader over the training data.
+
+        :return: The created dataloader.
+        """
         return DataLoader(self.train_dataset,
                           batch_size=self.train_batch_size,
                           num_workers=2,
@@ -63,12 +107,22 @@ class MetrLaInMemoryDataModule(pl.LightningDataModule):
                           collate_fn=self.collate_fn)
 
     def val_dataloader(self) -> EVAL_DATALOADERS:
+        """
+        Create a Dataloader over the validation data.
+
+        :return: The created dataloader.
+        """
         return DataLoader(self.valid_dataset,
                           batch_size=self.test_batch_size,
                           num_workers=2,
                           collate_fn=self.collate_fn)
 
     def test_dataloader(self) -> EVAL_DATALOADERS:
+        """
+        Create a Dataloader over the test data.
+
+        :return: The created dataloader.
+        """
         return DataLoader(self.test_dataset,
                           batch_size=self.test_batch_size,
                           num_workers=2,

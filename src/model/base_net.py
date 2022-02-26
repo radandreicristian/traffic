@@ -19,9 +19,7 @@ class BaseGNN(MessagePassing, ABC):
     """An abstract base class for the graph-neural-diffusion based GNNs"""
 
     def __init__(self,
-                 opt: dict,
-                 n_features: int,
-                 n_nodes: int):
+                 opt: dict):
         super(BaseGNN, self).__init__()
 
         self.ode_block: Optional[BaseOdeBlock] = None
@@ -30,17 +28,11 @@ class BaseGNN(MessagePassing, ABC):
 
         # Todo - This is a regression task, so...
         # self.n_classes = dataset.num_classes
-        self.n_features = n_features
-        self.n_nodes = n_nodes
 
         if opt['use_beltrami']:
-            self.fc_in_feat = nn.Linear(in_features=self.n_features,
-                                        out_features=opt['d_hidden_feat'])  # feat_hidden_dim
-            self.fc_in_pos = nn.Linear(in_features=opt['d_pos_enc'],  # pos_enc_dim
-                                       out_features=opt['d_hidden_pos_enc'])  # pos_enc_hidden_dim
-            opt['d_hidden'] = opt['d_hidden_feat'] + opt['d_hidden_pos_enc']  # hidden_dim
+            raise ValueError("Beltrami diffusion not implemented yet")
         else:
-            self.fc_in = nn.Linear(in_features=self.n_features,
+            self.fc_in = nn.Linear(in_features=1,
                                    out_features=opt['d_hidden'])
 
         self.d_hidden = opt['d_hidden']  # hidden_dim
@@ -55,7 +47,7 @@ class BaseGNN(MessagePassing, ABC):
             self.mlp_out = nn.ModuleList([nn.Linear(in_features=self.d_hidden,
                                                     out_features=self.d_hidden)])
 
-        self.regressor = nn.Linear(self.d_hidden, self.opt['n_future_steps'])  # This is a regression task
+        self.regressor = nn.Linear(self.d_hidden, 1)  # This is a regression task
         # Todo - Do I need an activation at the end?
 
         if self.opt['use_batch_norm']:

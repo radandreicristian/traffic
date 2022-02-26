@@ -1,23 +1,23 @@
+from typing import Any, List, Optional
+
 import torch
 import torch.nn.functional as f
 import torch_geometric
-from einops import rearrange
+from einops import rearrange, repeat
+from torch.nn import GRU
 
-from src.model.gnn_base import BaseGNN
+from src.model.base_net import BaseGNN
 from src.model.ode.blocks import get_ode_block
 from src.model.ode.blocks.funcs import get_ode_function
 
 
-class GNN(BaseGNN):
-    """
-
-    """
+class LatentGraphDiffusionRecurrentNet(BaseGNN):
 
     def __init__(self,
                  opt: dict,
                  dataset: torch_geometric.data.Dataset,
                  device):
-
+        super(LatentGraphDiffusionRecurrentNet, self).__init__(opt=opt)
         self.device = device
         self.edge_index, self.edge_attr = dataset.get_adjacency_matrix()
 
@@ -26,16 +26,10 @@ class GNN(BaseGNN):
 
         in_memory = opt['in_memory']
 
-        if in_memory:
-            n_nodes = dataset[0][0].size()[1]  # Todo maybe find a better way to do this
-        else:
-            n_nodes = dataset[0].x.size()[1]
+        self.n_nodes = dataset[0][0].size()[1] if in_memory else dataset[0].x.size()[1]
 
-        n_features = opt['n_features']
+        super(LatentGraphDiffusionRecurrentNet, self).__init__(opt=opt)
 
-        super(GNN, self).__init__(opt=opt,
-                                  n_features=n_features,
-                                  n_nodes=n_nodes)
         self.function = get_ode_function(opt)
 
         time_tensor = torch.tensor([0, self.T])
@@ -51,34 +45,43 @@ class GNN(BaseGNN):
                                             t=time_tensor,
                                             device=self.device)
 
+        self.rnn = GRU(input_size=self.d_hidden,
+                       hidden_size=self.d_hidden,
+                       num_layers=1,
+                       batch_first=True)
+        self.reg_states: Optional[List[Any]] = None
+
     def forward(self,
                 x: torch.Tensor,
                 pos_embedding: torch.Tensor = None) -> torch.Tensor:
 
-        # x (batch_size, n_previous=12, n_nodes=207, n_features=1)
+        # x (batch_size, n_previous, n_nodes, n_features=1)
 
         if self.opt['use_beltrami']:
             raise NotImplementedError('Beltrami not yet implemented.')
         else:
             x = f.dropout(x, self.opt['p_dropout_in'], training=self.training)
-            # x (batch_size, n_nodes, n_features, d_hidden)
 
-        # x (batch_size, n_nodes, d_hidden, n_previous)
-
-        # x (batch_size, n_previous, n_nodes)
-        x = torch.squeeze(x)
-
-        # x (batch_size, n_nodes, n_previous)
-        x = rearrange(x, 'b p n -> b n p')
-
-        # x (batch_size, n_nodes, d_hidden)
+        # x (batch_size, n_previous, n_nodes, d_hidden)
         x = self.fc_in(x)
 
         if self.opt['use_mlp_in']:
             x = f.dropout(x, self.opt['p_dropout_model'], training=self.training)
             for layer in self.mlp_in:
-                # x (batch_size, n_nodes, d_hidden)
+                # x (batch_size, n_previous, n_nodes, d_hidden)
                 x = f.dropout(x + layer(f.relu(x)), self.opt['p_dropout_model'], training=self.training)
+
+        # x ((batch_size, n_nodes), n_previous, d_hidden) - Prepare shape for RNN (req. 3D)
+        x = rearrange(x, 'b p n h -> (b n) p h')
+
+        # x ((batch_size, n_nodes), n_previous, d_hidden)
+        x, _ = self.rnn(x)
+
+        # x (batch_size, n_previous, n_nodes, d_hidden) - Rearrange back into a 4D tensor
+        x = rearrange(x, '(b n) p h -> b p n h', n=self.n_nodes)
+
+        # x (batch_size, n_nodes, d_hidden) - Take only the last output state
+        x = x[:, -1, :, :]
 
         if self.opt['use_batch_norm']:
             # x (batch_size, n_nodes, d_hidden)
@@ -110,11 +113,22 @@ class GNN(BaseGNN):
 
         z = f.dropout(z, self.opt['p_dropout_model'])
 
+        # z (batch_size, n_future_steps, n_nodes, n_features)
+        z = repeat(z, 'b n h -> b f n h', f=self.n_future_steps)
+
+        z = rearrange(z, 'b f n h -> (b n) f h')
+
+        # z (batch_size, n_future_steps, n_nodes, n_features)
+        z, _ = self.rnn(z)
+
+        # z (batch_Size, n_future_steps, n_node, d_hidden)
+        z = rearrange(z, '(b n) f h -> b f n h', n=self.n_nodes)
+
         # z (batch_size, n_nodes, n_future) - Per node final prediction
-        z = self.regressor(z)
+        z = torch.squeeze(self.regressor(z))
 
         del x
         torch.cuda.empty_cache()
-        z = rearrange(z, 'b n p -> b p n')
+        # z = rearrange(z, 'b n f -> b f n')
 
         return z
