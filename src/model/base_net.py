@@ -81,23 +81,38 @@ class BaseGNN(MessagePassing, ABC):
         self.ode_block.ode_func.n_func_eval = 0
         self.ode_block.reg_ode_func.ode_func.n_func_eval = 0
 
-    def reset(self):
-        self.m1.reset_parameters()
-        self.m2.reset_parameters()
-
     def rearrange_batch_norm(self,
-                             tensor):
-        tensor = rearrange(tensor, 'batch nodes hid -> batch hid nodes')
-        return rearrange(self.bn_in(tensor), 'batch hid nodes -> batch nodes hid')
+                             tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Rearrange the tensor such that batch norm can be applied, apply it and return the result.
+
+        :param tensor: A tensor of shape (batch, nodes, hid)
+        :return: The batch-normalised tensor with the same shape.
+        """
+        transposed_tensor = rearrange(tensor, 'batch nodes hid -> batch hid nodes')
+        batch_norm_transposed_tensor = self.bn_in(transposed_tensor)
+        return rearrange(batch_norm_transposed_tensor, 'batch hid nodes -> batch nodes hid')
 
     def augment_up(self,
-                   tensor):
+                   tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Add extra zero features to the feature tensor for ODE stability.
+
+        :param tensor: A tensor to be taken through a neural ODE.
+        :return: The input tensor, but the features dimension is doubled and filled with zeros.
+        """
         zeros = torch.zeros(tensor.shape).to(self.device)
         # h (batch_size, n_nodes, d_hidden * 2)
         return torch.cat([tensor, zeros], dim=2)
 
     @staticmethod
     def augment_down(tensor):
+        """
+        Remove the extra features for ODE stability from the tensor.
+
+        :param tensor: A tensor that was taken through a neural ODE.
+        :return: The input tensor, but with features halved.
+        """
         return torch.split(tensor, tensor.shape[2] // 2, dim=2)[0]
 
     def __repr__(self):
