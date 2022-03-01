@@ -62,6 +62,25 @@ class Experiment:
         """
         return " ".join([f"{k} min.: {v:.1f} " for k, v in rmses.items()])
 
+    def log_rmses(self,
+                  title: str,
+                  values: Dict[int, float],
+                  iteration: int) -> None:
+        """
+        Logs a dictionary of RMSEs to ClearML.
+
+        :param title:
+        :param values:
+        :param iteration:
+        :return:
+        """
+        for minutes, value in values.items():
+            series = f'RMSE @ {minutes} min.'
+            self.logger.report_scalar(title=title,
+                                      value=value,
+                                      series=series,
+                                      iteration=iteration)
+
     @staticmethod
     def print_model_params(model) -> None:
         """
@@ -242,7 +261,9 @@ class Experiment:
             train_loss = float(np.mean(train_losses))
             train_rmses = self.mean_rmses(train_rmses)
 
-            self.logger.report_scalar('Train loss', value=train_loss, series='Train Loss', iteration=epoch)
+            self.logger.report_scalar('Losses', value=train_loss, series='Train Loss', iteration=epoch)
+            self.log_rmses('Train RMSEs', values=train_rmses, iteration=epoch)
+
             print(f'[Ep. {epoch} - Train]: Loss {train_loss}, RMSEs: {self.pretty_rmses(train_rmses)}')
 
             valid_rmses = []
@@ -257,7 +278,8 @@ class Experiment:
             valid_loss = float(np.mean(valid_losses))
             valid_rmses = self.mean_rmses(valid_rmses)
 
-            self.logger.report_scalar('Valid loss', value=valid_loss, series='Valid Loss', iteration=epoch)
+            self.logger.report_scalar('Losses', value=valid_loss, series='Validation Loss', iteration=epoch)
+            self.log_rmses('Validation RMSEs', values=valid_rmses, iteration=epoch)
             print(f'[Ep. {epoch} - Valid]: Loss {valid_loss}, RMSEs {self.pretty_rmses(valid_rmses)}')
 
             mean_valid_rmse = np.mean(list(valid_rmses.values()))
@@ -269,6 +291,7 @@ class Experiment:
             if early_stopping.early_stop:
                 print(f"Early stopping triggered after epoch {epoch}. No valid loss improvement in the last "
                       f"{early_stopping.patience} epochs.")
+                break
         print(f"Best performing epoch {self.best_model_info['Epoch']}")
 
     def test(self):
@@ -279,6 +302,7 @@ class Experiment:
             test_rmses.append(rmses)
 
         test_rmses = self.mean_rmses(test_rmses)
+        self.log_rmses('Test RMSEs', values=test_rmses, iteration=1)
         print(f'[Test]: RMSEs {self.pretty_rmses(test_rmses)}')
 
     def run(self):

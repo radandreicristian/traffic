@@ -15,7 +15,7 @@ from torch_geometric.nn import MessagePassing
 from src.model.ode.blocks import BaseOdeBlock
 from src.model.ode.blocks.funcs.reg_funcs import create_reg_funcs
 
-from residual_layer import ResidualLinear
+from src.model.residual_layer import ResidualLinear
 
 
 class BaseGNN(MessagePassing, ABC):

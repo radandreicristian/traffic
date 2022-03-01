@@ -34,6 +34,16 @@ class MetrLaDataModule(pl.LightningDataModule):
         self.collate_fn: Optional[Callable] = None
         self.setup()
 
+    def sample(self, indices, stage):
+        sample = f'sample_{stage}'
+        if self.opt[sample]:
+            sample_factor = f'sample_{stage}_factor'
+            factor = self.opt[sample_factor]
+            rng = np.random.default_rng(21)
+            indices = rng.choice(indices, int(float(factor) * len(indices)), replace=False)
+
+        return indices
+
     def setup(self, stage: Optional[str] = None) -> None:
         """
         Sets up the DataModule.
@@ -50,14 +60,14 @@ class MetrLaDataModule(pl.LightningDataModule):
         last_valid_index = int((train_percentage + valid_percentage) * dataset_len)
 
         train_indices = range(0, last_train_index)
-        if self.opt['sample_train']:
-            factor = self.opt['sample_train_factor']
-            rng = np.random.default_rng(21)
-            train_indices = rng.choice(train_indices, int(factor * len(train_indices)), replace=False)
-
         valid_indices = range(last_train_index, last_valid_index)
         test_indices = range(last_valid_index, dataset_len)
-        print("n train samples", len(train_indices))
+
+        train_indices = self.sample(train_indices, 'train')
+        valid_indices = self.sample(valid_indices, 'valid')
+        test_indices = self.sample(test_indices, 'test')
+
+        print(f"Train: {len(train_indices)}, valid: {len(valid_indices)}, test: {len(test_indices)} samples")
         self.train_dataset = Subset(self.dataset, train_indices)
         self.valid_dataset = Subset(self.dataset, valid_indices)
         self.test_dataset = Subset(self.dataset, test_indices)
