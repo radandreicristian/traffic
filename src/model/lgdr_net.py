@@ -21,7 +21,6 @@ class LatentGraphDiffusionRecurrentNet(BaseGNN):
                  opt: dict,
                  dataset: torch_geometric.data.Dataset,
                  device: torch.device) -> None:
-        super(LatentGraphDiffusionRecurrentNet, self).__init__(opt=opt)
         self.device = device
         self.edge_index, self.edge_attr = dataset.get_adjacency_matrix()
 

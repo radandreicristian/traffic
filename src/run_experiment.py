@@ -1,7 +1,7 @@
-import logging
+import gc
 import time
 from pathlib import Path
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
 
 import hydra
 import numpy as np
@@ -17,7 +17,7 @@ from torch_geometric.datasets import MetrLa, MetrLaInMemory
 from src.data.metrla_datamodule import MetrLaDataModule
 from src.model.gdr_net import GraphDiffusionRecurrentNet
 from src.model.lgdr_net import LatentGraphDiffusionRecurrentNet
-from src.model.optimizers import get_optimizer
+from src.model.ode_net import OdeNet
 from src.util.earlystopping import EarlyStopping
 
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
@@ -128,16 +128,30 @@ class Experiment:
 
         # (batch_size, n_future, n_nodes)
         y = torch.squeeze(y)
+        x_squeezed = torch.squeeze(x)
 
-        y_hat = self.model(x) if not use_best_model else self.best_model(x)
+        if not self.model.return_previous_losses:
+            y_hat = self.model(x) if not use_best_model else self.best_model(x)
 
-        loss = mse_loss(y, y_hat)
+            loss = mse_loss(y, y_hat)
 
-        rmses = {k: torch.sqrt(
-            torch.mean((y[:, v, :] - y_hat.detach()[:, v, :]) ** 2)).item() for k, v in indices.items()}
+            rmses = {k: torch.sqrt(
+                torch.mean((y[:, v, :] - y_hat.detach()[:, v, :]) ** 2)).item() for k, v in indices.items()}
 
-        del x, y, y_hat
-        return loss, rmses
+            del x, y, y_hat
+            return loss, rmses
+        else:
+            y_hat_prev, y_hat_future = self.model(x) if not use_best_model else self.best_model(x)
+
+            prev_loss = mse_loss(y_hat_prev, x_squeezed[:, 1:, :])
+            future_loss = mse_loss(y_hat_future, y)
+            rmses = {k: torch.sqrt(
+                torch.mean((y[:, v, :] - y_hat_future.detach()[:, v, :]) ** 2)).item() for k, v in indices.items()}
+
+            loss = prev_loss + future_loss
+            del x, y, y_hat_prev, y_hat_future
+
+            return loss, rmses
 
     def train_step(self,
                    batch: List[torch.Tensor],
@@ -215,30 +229,74 @@ class Experiment:
         self.datamodule = MetrLaDataModule(self.opt,
                                            dataset=self.dataset)
 
-        model = self.opt['model_type']
-
-        if model == 'lgdr':
-            self.model = LatentGraphDiffusionRecurrentNet(self.opt, self.dataset, self.device).to(self.device)
-        elif model == 'gdr':
-            self.model = GraphDiffusionRecurrentNet(self.opt, self.dataset, self.device).to(self.device)
-        else:
-            raise ValueError('Invalid model name')
-
         self.train_dataloader = self.datamodule.train_dataloader()
         self.valid_dataloader = self.datamodule.val_dataloader()
         self.test_dataloader = self.datamodule.test_dataloader()
+
+        self.set_model()
 
         self.print_model_params(self.model)
         # print(params_string)
 
         params = [p for p in self.model.parameters() if p.requires_grad]
-        self.optimizer = get_optimizer(self.opt, params)
+        self.set_optimizer(params)
 
         self.task = Task.init(project_name='Graph Diffusion Traffic Forecasting',
                               task_name='Train Task - V.0.1',
                               task_type=TaskTypes.training)
 
         self.logger = Logger.current_logger()
+
+    def set_model(self) -> None:
+        model_tag = self.opt['model_type']
+
+        if model_tag == 'lgdr':
+            model = LatentGraphDiffusionRecurrentNet(self.opt, self.dataset, self.device).to(self.device)
+        elif model_tag == 'gdr':
+            model = GraphDiffusionRecurrentNet(self.opt, self.dataset, self.device).to(self.device)
+        elif model_tag == 'ode':
+            model = OdeNet(self.opt, self.dataset, self.device).to(self.device)
+        else:
+            raise ValueError('Invalid model name')
+        self.model = model
+
+    def set_optimizer(self,
+                      params: Union[Iterable[torch.Tensor], Dict[AnyStr, torch.Tensor]]) -> None:
+        """
+        Constructs an optimizer as specified by the arguments
+
+        :param opt: A configuration dictionary.
+        :param params: Iterable or dictionary of tensors to be optimized.
+        :return: A PyTorch optimizer.
+        """
+        optimizer_name = self.opt['optimizer']
+        lr = self.opt['lr']
+        weight_decay = self.opt['weight_decay']
+
+        if optimizer_name == 'sgd':
+            optimizer = torch.optim.SGD(params=params,
+                                        lr=lr,
+                                        weight_decay=weight_decay)
+        elif optimizer_name == 'rmsprop':
+            optimizer = torch.optim.RMSprop(params=params,
+                                            lr=lr,
+                                            weight_decay=weight_decay)
+        elif optimizer_name == 'adagrad':
+            optimizer = torch.optim.Adagrad(params=params,
+                                            lr=lr,
+                                            weight_decay=weight_decay)
+        elif optimizer_name == 'adam':
+            optimizer = torch.optim.Adam(params=params,
+                                         lr=lr,
+                                         weight_decay=weight_decay)
+        elif optimizer_name == 'adamax':
+            optimizer = torch.optim.Adamax(params=params,
+                                           lr=lr,
+                                           weight_decay=weight_decay)
+        else:
+            raise ValueError("Unsupported optimizer: {}".format(optimizer_name))
+
+        self.optimizer = optimizer
 
     def train(self):
         early_stopping = EarlyStopping()
@@ -319,4 +377,8 @@ def main(config: DictConfig):
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        torch.cuda.empty_cache()
+        gc.collect()

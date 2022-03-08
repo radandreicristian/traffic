@@ -25,6 +25,8 @@ class BaseGNN(MessagePassing, ABC):
                  opt: dict):
         super(BaseGNN, self).__init__()
 
+        self.return_previous_losses = False
+
         self.ode_block: Optional[BaseOdeBlock] = None
         self.opt = opt
         self.T = opt['time']
