@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import torch
 
@@ -10,18 +12,16 @@ class EarlyStopping:
     """
 
     def __init__(self,
+                 checkpoint_path: str,
                  patience=4,
                  verbose=False,
-                 delta=0,
-                 path='checkpoint.pt',
-                 trace_func=print) -> None:
+                 delta=0) -> None:
         """
 
         :param patience: How long to wait after last time validation loss improved.
         :param verbose: If True, prints a message for each validation loss improvement.
         :param delta: Minimum change in the monitored quantity to qualify as an improvement.
         :param path: Path for the checkpoint to be saved to.
-        :param trace_func: Trace print function. Default 'print'.
 
         :returns None.
         """
@@ -33,8 +33,8 @@ class EarlyStopping:
         self.early_stop = False
         self.val_loss_min = np.Inf
         self.delta = delta
-        self.path = path
-        self.trace_func = trace_func
+        self.checkpoint_path = checkpoint_path
+        self.logger = logging.getLogger('traffic')
 
     def __call__(self,
                  val_loss: float,
@@ -53,7 +53,7 @@ class EarlyStopping:
             self.save_checkpoint(val_loss, model)
         elif score < self.best_score + self.delta:
             self.counter += 1
-            self.trace_func(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            self.logger.debug(f'Early stopping: {self.counter}/{self.patience}')
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
@@ -72,7 +72,6 @@ class EarlyStopping:
         :return: None.
         """
         if self.verbose:
-            self.trace_func(
-                f'Validation loss decreased ({self.val_loss_min:.2f} --> {val_loss:.2f}).  Saving model.')
-        torch.save(model.state_dict(), self.path)
+            self.logger.debug(f'Validation loss decreased ({self.val_loss_min:.2f} --> {val_loss:.2f}).  Saving model.')
+        torch.save(model.state_dict(), self.checkpoint_path)
         self.val_loss_min = val_loss

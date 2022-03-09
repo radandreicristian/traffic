@@ -22,21 +22,21 @@ valid_percentage: .2
 test_percentage: .2
 
 # There's around 32K points - ~20k train, ~6k valid, ~6k test
-sample_train: True
+sample_train: False
 sample_train_factor: 0.0016
 
-sample_valid: True
+sample_valid: False
 sample_valid_factor: 0.0032
 
-sample_test: True
+sample_test: False
 sample_test_factor: 0.0032
 
-train_batch_size: 32
-test_batch_size: 32
+train_batch_size: 64
+test_batch_size: 64
 ##################################### Model Configuration ##########################################
 
-# 'gdr' (graph diffusion recurrent net) or 'lgdr' (latent graph diffusion recurrent net)
-model_type: ode
+# 'gdr' (graph diffusion recurrent net) or 'lgdr' (latent graph diffusion recurrent net) or 'ode'
+model_type: lgdr
 
 # Size of the hidden feature vectors in the model (int)
 d_hidden: 32
@@ -60,13 +60,13 @@ use_batch_norm: True
 optimizer: adam
 
 # Learning rate of the optimizer
-lr: 2e-2
+lr: 2e-3
 
 # Weight decay
 weight_decay: 5e-2
 
 # Number of epochs for training
-n_epochs: 2
+n_epochs: 50
 
 # The factor of matrix A - Used only in C(ontinuous)GNN  src/CGNN.py (float <= 1.)
 # Todo - Read more on this
@@ -105,7 +105,7 @@ solver: dopri5
 step_size: 1.
 
 # Maximum number of ODE iterations (int)
-max_iters: 200
+max_iters: 100
 
 # Use adjoint ODE method to reduce memory (bool)
 # Todo - Read more on this
@@ -123,7 +123,7 @@ tol_scale_adjoint: 10.
 n_ode_blocks: 1
 
 # Maximum number of function evaluations in each epoch/batch? (int) {<max_nfe>}
-max_func_evals: 500
+max_func_evals: 1000
 
 # Use early stopping of the ODE integrator on inference (bool) {no_early}
 early_stopping_integrator: True

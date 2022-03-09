@@ -55,6 +55,8 @@ class Experiment:
         self.logger = logging.getLogger('traffic')
         self.logger.setLevel(logging.DEBUG)
 
+        self.model_path = 'best_model.pt'
+
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
         """
@@ -238,7 +240,6 @@ class Experiment:
         self.set_model()
 
         self.print_model_params()
-        # print(params_string)
 
         params = [p for p in self.model.parameters() if p.requires_grad]
         self.set_optimizer(params)
@@ -301,7 +302,7 @@ class Experiment:
         self.optimizer = optimizer
 
     def train(self):
-        early_stopping = EarlyStopping()
+        early_stopping = EarlyStopping(checkpoint_path=self.model_path)
         for epoch in range(self.opt['n_epochs']):
             train_rmses = []
             train_losses = []
@@ -352,8 +353,12 @@ class Experiment:
             if early_stopping.early_stop:
                 self.logger.debug(f"Early stopping triggered after epoch {epoch}. No valid loss improvement in the "
                                   f"last {early_stopping.patience} epochs.")
+                self.task.update_output_model(self.model_path, "Model")
                 break
         self.logger.debug(f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_rmse}")
+        if not early_stopping.early_stop:
+            torch.save(self.best_model.state_dict(), self.model_path)
+            self.task.update_output_model(self.model_path, "Model")
 
     def test(self):
         test_rmses = []
@@ -373,7 +378,7 @@ class Experiment:
         self.logger.debug("Starting training the model.")
         self.train()
 
-        self.logger.debug("Starting to ")
+        self.logger.debug("Starting testing the model.")
         self.test()
 
 
