@@ -22,17 +22,15 @@ valid_percentage: .2
 test_percentage: .2
 
 # There's around 32K points - ~20k train, ~6k valid, ~6k test
-sample_train: False
+sample_dataset: False
+
+# These sampling factors leave 32/32/32 samples in train/valid/test - Just for quick experimentation purposes.
 sample_train_factor: 0.0016
+sample_valid_factor: 0.0048
+sample_test_factor: 0.0048
 
-sample_valid: False
-sample_valid_factor: 0.0032
-
-sample_test: False
-sample_test_factor: 0.0032
-
-train_batch_size: 64
-test_batch_size: 64
+train_batch_size: 32
+test_batch_size: 32
 ##################################### Model Configuration ##########################################
 
 # 'gdr' (graph diffusion recurrent net) or 'lgdr' (latent graph diffusion recurrent net) or 'ode'

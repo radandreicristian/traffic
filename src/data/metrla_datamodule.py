@@ -38,7 +38,7 @@ class MetrLaDataModule(pl.LightningDataModule):
         self.setup()
 
     def sample(self, indices, stage):
-        sample = f'sample_{stage}'
+        sample = 'sample_dataset'
         if self.opt[sample]:
             sample_factor = f'sample_{stage}_factor'
             factor = self.opt[sample_factor]

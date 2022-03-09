@@ -7,3 +7,4 @@ numpy==1.21.4
 omegaconf==2.1.1
 pytorch_lightning==1.5.9
 boto3
+googledrivedownloader
