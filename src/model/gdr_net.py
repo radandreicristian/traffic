@@ -6,9 +6,9 @@ import torch_geometric
 from einops import rearrange
 from torch.nn import GRUCell
 
-from src.model.base_net import BaseGNN
-from src.model.ode.blocks import get_ode_block
-from src.model.ode.blocks.funcs import get_ode_function
+from model.base_net import BaseGNN
+from model.ode.blocks import get_ode_block
+from model.ode.blocks.funcs import get_ode_function
 
 
 class GraphDiffusionRecurrentNet(BaseGNN):

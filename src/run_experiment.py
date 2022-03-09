@@ -14,11 +14,11 @@ from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory
 
-from src.data.metrla_datamodule import MetrLaDataModule
-from src.model.gdr_net import GraphDiffusionRecurrentNet
-from src.model.lgdr_net import LatentGraphDiffusionRecurrentNet
-from src.model.ode_net import OdeNet
-from src.util.earlystopping import EarlyStopping
+from data.metrla_datamodule import MetrLaDataModule
+from model.gdr_net import GraphDiffusionRecurrentNet
+from model.lgdr_net import LatentGraphDiffusionRecurrentNet
+from model.ode_net import OdeNet
+from util.earlystopping import EarlyStopping
 
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 

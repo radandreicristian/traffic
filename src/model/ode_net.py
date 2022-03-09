@@ -6,9 +6,9 @@ import torch_geometric.data
 from einops import rearrange
 from torch import Tensor
 
-from src.model.base_net import BaseGNN
-from src.model.ode.blocks import get_ode_block
-from src.model.ode.blocks.funcs import get_ode_function
+from model.base_net import BaseGNN
+from model.ode.blocks import get_ode_block
+from model.ode.blocks.funcs import get_ode_function
 
 
 class OdeNet(BaseGNN):

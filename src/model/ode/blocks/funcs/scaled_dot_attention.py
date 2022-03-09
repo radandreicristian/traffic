@@ -14,8 +14,8 @@ import torch_sparse
 from torch_geometric.utils import softmax
 from torch_geometric.utils.loop import add_remaining_self_loops
 
-from src.model.ode.blocks.funcs.base import BaseOdeFunc
-from src.model.ode.utils import squareplus
+from model.ode.blocks.funcs.base import BaseOdeFunc
+from model.ode.utils import squareplus
 
 
 class ScaledDotProductOdeFunc(BaseOdeFunc):
