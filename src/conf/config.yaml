@@ -6,6 +6,7 @@ project_name:
 # The name of the dataset - Either "metr_la" or "pems_bay" (wip)
 dataset: metr_la
 
+
 # Store the data in memory or on the disk
 in_memory: True
 
@@ -21,14 +22,14 @@ valid_percentage: .2
 test_percentage: .2
 
 # There's around 32K points - ~20k train, ~6k valid, ~6k test
-sample_train: False
-sample_train_factor: 1
+sample_train: True
+sample_train_factor: 0.0016
 
-sample_valid: False
-sample_valid_factor: 1
+sample_valid: True
+sample_valid_factor: 0.0032
 
-sample_test: False
-sample_test_factor: 1
+sample_test: True
+sample_test_factor: 0.0032
 
 train_batch_size: 32
 test_batch_size: 32
@@ -65,7 +66,7 @@ lr: 2e-2
 weight_decay: 5e-2
 
 # Number of epochs for training
-n_epochs: 10
+n_epochs: 2
 
 # The factor of matrix A - Used only in C(ontinuous)GNN  src/CGNN.py (float <= 1.)
 # Todo - Read more on this

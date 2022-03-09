@@ -1,3 +1,4 @@
+import logging
 from collections import Iterable
 from typing import Optional, Callable
 
@@ -7,6 +8,8 @@ import torch
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
 from torch.utils.data import Subset, DataLoader
 from torch_geometric.data import Data, Dataset
+
+logger = logging.getLogger('traffic')
 
 
 class MetrLaDataModule(pl.LightningDataModule):
@@ -67,7 +70,7 @@ class MetrLaDataModule(pl.LightningDataModule):
         valid_indices = self.sample(valid_indices, 'valid')
         test_indices = self.sample(test_indices, 'test')
 
-        print(f"Train: {len(train_indices)}, valid: {len(valid_indices)}, test: {len(test_indices)} samples")
+        logger.debug(f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}")
         self.train_dataset = Subset(self.dataset, train_indices)
         self.valid_dataset = Subset(self.dataset, valid_indices)
         self.test_dataset = Subset(self.dataset, test_indices)

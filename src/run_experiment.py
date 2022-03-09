@@ -1,4 +1,5 @@
 import gc
+import logging
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
@@ -49,7 +50,10 @@ class Experiment:
         self.best_val_rmse: float = float("inf")
 
         self.task: Optional[Task] = None
-        self.logger: Optional[Logger] = None
+        self.clearml_logger: Optional[Logger] = None
+
+        self.logger = logging.getLogger('traffic')
+        self.logger.setLevel(logging.DEBUG)
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -76,13 +80,12 @@ class Experiment:
         """
         for minutes, value in values.items():
             series = f'RMSE @ {minutes} min.'
-            self.logger.report_scalar(title=title,
-                                      value=value,
-                                      series=series,
-                                      iteration=iteration)
+            self.clearml_logger.report_scalar(title=title,
+                                              value=value,
+                                              series=series,
+                                              iteration=iteration)
 
-    @staticmethod
-    def print_model_params(model) -> None:
+    def print_model_params(self) -> None:
         """
         Prints the trainable parameters of the model.
 
@@ -90,14 +93,10 @@ class Experiment:
         :return:
         """
 
-        print(str(model))
-        for name, param in model.named_parameters():
-            if param.requires_grad:
-                print(name, param.data.shape)
-
-        model_parameters = filter(lambda p: p.requires_grad, model.parameters())
+        self.logger.debug(str(self.model))
+        model_parameters = filter(lambda p: p.requires_grad, self.model.parameters())
         total_params = sum([np.prod(p.size()) for p in model_parameters])
-        print("Total trainable params:", total_params)
+        self.logger.debug(f"Total trainable params: {total_params}")
 
     @staticmethod
     def mean_rmses(rmses: List[Dict]) -> Dict:
@@ -214,15 +213,18 @@ class Experiment:
         :return:
         """
         inmemory_data = self.opt.get('in_memory')
+        data_root_arg = self.opt.get('data_path')
+
+        data_root = Path(__file__).parent.parent if not data_root_arg else Path(data_root_arg)
 
         if inmemory_data:
-            data_folder = Path(__file__).parent.parent / 'data' / 'inmemory'
-            self.dataset = MetrLaInMemory(root=str(data_folder.absolute()),
+            data_path = data_root / 'data' / 'inmemory'
+            self.dataset = MetrLaInMemory(root=str(data_path.absolute()),
                                           n_previous_steps=self.n_previous_steps,
                                           n_future_steps=self.n_future_steps)
         else:
-            data_folder = Path(__file__).parent.parent / 'data' / 'disk'
-            self.dataset = MetrLa(root=str(data_folder.absolute()),
+            data_path = data_root / 'data' / 'disk'
+            self.dataset = MetrLa(root=str(data_path.absolute()),
                                   n_previous_steps=self.n_previous_steps,
                                   n_future_steps=self.n_future_steps)
 
@@ -235,7 +237,7 @@ class Experiment:
 
         self.set_model()
 
-        self.print_model_params(self.model)
+        self.print_model_params()
         # print(params_string)
 
         params = [p for p in self.model.parameters() if p.requires_grad]
@@ -245,7 +247,7 @@ class Experiment:
                               task_name='Train Task - V.0.1',
                               task_type=TaskTypes.training)
 
-        self.logger = Logger.current_logger()
+        self.clearml_logger = self.task.logger
 
     def set_model(self) -> None:
         model_tag = self.opt['model_type']
@@ -312,17 +314,18 @@ class Experiment:
                 train_rmses.append(rmses)
                 end_time = time.time()
 
-                print(f"[Ep.{epoch}|B.{idx}|{(end_time - start_time):.0f}s]: Loss {loss:.1f}, RMSEs: "
-                      f"{self.pretty_rmses(rmses)}")
+                if idx % 50 == 0:
+                    self.logger.debug(f"[Train|Ep.{epoch}|B.{idx}|{(end_time - start_time):.1f}s]: Loss {loss:.2f}, "
+                                      f"RMSEs: {self.pretty_rmses(rmses)}")
                 del loss, rmses
 
             train_loss = float(np.mean(train_losses))
             train_rmses = self.mean_rmses(train_rmses)
 
-            self.logger.report_scalar('Losses', value=train_loss, series='Train Loss', iteration=epoch)
+            self.clearml_logger.report_scalar('Losses', value=train_loss, series='Train Loss', iteration=epoch)
             self.log_rmses('Train RMSEs', values=train_rmses, iteration=epoch)
 
-            print(f'[Ep. {epoch} - Train]: Loss {train_loss}, RMSEs: {self.pretty_rmses(train_rmses)}')
+            self.logger.debug(f'[Train|Ep.{epoch}|Overall]: Loss {train_loss}, RMSEs: {self.pretty_rmses(train_rmses)}')
 
             valid_rmses = []
             valid_losses = []
@@ -336,9 +339,9 @@ class Experiment:
             valid_loss = float(np.mean(valid_losses))
             valid_rmses = self.mean_rmses(valid_rmses)
 
-            self.logger.report_scalar('Losses', value=valid_loss, series='Validation Loss', iteration=epoch)
+            self.clearml_logger.report_scalar('Losses', value=valid_loss, series='Validation Loss', iteration=epoch)
             self.log_rmses('Validation RMSEs', values=valid_rmses, iteration=epoch)
-            print(f'[Ep. {epoch} - Valid]: Loss {valid_loss}, RMSEs {self.pretty_rmses(valid_rmses)}')
+            self.logger.debug(f'[Valid|Ep.{epoch}|Overall]: Loss {valid_loss}, RMSEs {self.pretty_rmses(valid_rmses)}')
 
             mean_valid_rmse = np.mean(list(valid_rmses.values()))
             if mean_valid_rmse < self.best_val_rmse:
@@ -347,10 +350,10 @@ class Experiment:
                 self.best_model_info = {'Epoch': epoch}
             early_stopping(valid_loss, self.model)
             if early_stopping.early_stop:
-                print(f"Early stopping triggered after epoch {epoch}. No valid loss improvement in the last "
-                      f"{early_stopping.patience} epochs.")
+                self.logger.debug(f"Early stopping triggered after epoch {epoch}. No valid loss improvement in the "
+                                  f"last {early_stopping.patience} epochs.")
                 break
-        print(f"Best performing epoch {self.best_model_info['Epoch']}")
+        self.logger.debug(f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_rmse}")
 
     def test(self):
         test_rmses = []
@@ -361,11 +364,16 @@ class Experiment:
 
         test_rmses = self.mean_rmses(test_rmses)
         self.log_rmses('Test RMSEs', values=test_rmses, iteration=1)
-        print(f'[Test]: RMSEs {self.pretty_rmses(test_rmses)}')
+        self.logger.debug(f'[Test]: RMSEs {self.pretty_rmses(test_rmses)}')
 
     def run(self):
+        self.logger.debug("Setting up the experiment.")
         self.setup()
+
+        self.logger.debug("Starting training the model.")
         self.train()
+
+        self.logger.debug("Starting to ")
         self.test()
 
 
