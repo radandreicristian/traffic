@@ -184,3 +184,20 @@ use_beltrami: False
 # Random Notes:
 # Attention - changes through the diffusion process
 # Rewiring - Happens at the start of the epoch based on features at t=0
+
+
+################################### Hyperparameter Optimization ###################################
+
+defaults:
+  - hydra/sweeper: optuna
+
+hydra:
+  sweeper:
+    optuna_config:
+      direction: minimize
+      study_name: traffic_diffusion
+      storage: null
+      n_trials: 30
+      n_jobs: 1
+      sampler: tpe
+      seed: 21

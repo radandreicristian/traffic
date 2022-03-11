@@ -367,9 +367,9 @@ class Experiment:
             _, rmses = self.eval_step(batch=batch, use_best_model=True)
             test_rmses.append(rmses)
 
-        test_rmses = self.mean_rmses(test_rmses)
-        self.log_rmses('Test RMSEs', values=test_rmses, iteration=1)
-        self.logger.debug(f'[Test]: RMSEs {self.pretty_rmses(test_rmses)}')
+        self.test_rmses = self.mean_rmses(test_rmses)
+        self.log_rmses('Test RMSEs', values=self.test_rmses, iteration=1)
+        self.logger.debug(f'[Test]: RMSEs {self.pretty_rmses(self.test_rmses)}')
 
     def run(self):
         self.logger.debug("Setting up the experiment.")
@@ -381,12 +381,18 @@ class Experiment:
         self.logger.debug("Starting testing the model.")
         self.test()
 
+    def get_test_rmse(self):
+        test_rmse_values = self.test_rmses.values()
+        mean_test_rmse = sum(test_rmse_values) / len(test_rmse_values)
+        return mean_test_rmse
+
 
 @hydra.main(config_path='conf',
             config_name="config.yaml")
 def main(config: DictConfig):
     experiment = Experiment(config)
     experiment.run()
+    return experiment.get_test_rmse()
 
 
 if __name__ == '__main__':
