@@ -31,8 +31,6 @@ class BaseGNN(MessagePassing, ABC):
         self.opt = opt
         self.T = opt['time']
         self.p_dropout = opt['p_dropout_model']
-        # Todo - This is a regression task, so...
-        # self.n_classes = dataset.num_classes
 
         if opt['use_beltrami']:
             raise ValueError("Beltrami diffusion not implemented yet")
@@ -61,7 +59,7 @@ class BaseGNN(MessagePassing, ABC):
     @abstractmethod
     def forward(self,
                 x: torch.Tensor,
-                pos_embedding: torch.Tensor) -> torch.Tensor:
+                pos_embedding: torch.Tensor = None) -> torch.Tensor:
         pass
 
     def get_n_func_eval(self) -> int:

@@ -16,11 +16,10 @@ from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory
 
 from data.metrla_datamodule import MetrLaDataModule
-from model.gdr_net import GraphDiffusionRecurrentNet
-from model.lgdr_net import LatentGraphDiffusionRecurrentNet
-from model.ode_net import OdeNet
+from model import GMAN2, GraphMultiAttentionNet, LatentGraphDiffusionRecurrentNet, OdeNet, GraphDiffusionRecurrentNet
+from src.util.generate_node2vec import Node2VecEmbedder
 from util.earlystopping import EarlyStopping
-
+import os.path as osp
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 
 
@@ -56,6 +55,9 @@ class Experiment:
         self.logger.setLevel(logging.DEBUG)
 
         self.model_path = 'best_model.pt'
+
+        self.use_temporal_features: Optional[bool] = None
+        self.positional_embeddings: Optional[torch.Tensor] = None
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -123,36 +125,27 @@ class Experiment:
 
         :param batch: A tensor containing a batch of input data.
         :param pos_encoding: Optional positional encodings (for Beltrami).
+        :param use_best_model: Whether to use the best model so far or not (for testing).
         :return: A tuple containing the loss and the RMSEs.
         """
-        x, y = batch
+        x_signal, y_signal, x_temporal, y_temporal = batch
 
         # (batch_size, n_future, n_nodes)
-        y = torch.squeeze(y)
-        x_squeezed = torch.squeeze(x)
+        y_signal = torch.squeeze(y_signal)
 
-        if not self.model.return_previous_losses:
-            y_hat = self.model(x) if not use_best_model else self.best_model(x)
-
-            loss = mse_loss(y, y_hat)
-
-            rmses = {k: torch.sqrt(
-                torch.mean((y[:, v, :] - y_hat.detach()[:, v, :]) ** 2)).item() for k, v in indices.items()}
-
-            del x, y, y_hat
-            return loss, rmses
+        if self.use_temporal_features:
+            y_hat = self.model(x_signal, x_temporal, y_temporal) if not use_best_model else self.best_model(x_signal,
+                                                                                                            x_temporal,
+                                                                                                            y_temporal)
         else:
-            y_hat_prev, y_hat_future = self.model(x) if not use_best_model else self.best_model(x)
+            y_hat = self.model(x_signal) if not use_best_model else self.best_model(x_signal)
+        loss = mse_loss(y_signal, y_hat)
 
-            prev_loss = mse_loss(y_hat_prev, x_squeezed[:, 1:, :])
-            future_loss = mse_loss(y_hat_future, y)
-            rmses = {k: torch.sqrt(
-                torch.mean((y[:, v, :] - y_hat_future.detach()[:, v, :]) ** 2)).item() for k, v in indices.items()}
+        rmses = {k: torch.sqrt(
+            torch.mean((y_signal[:, v, :] - y_hat.detach()[:, v, :]) ** 2)).item() for k, v in indices.items()}
 
-            loss = prev_loss + future_loss
-            del x, y, y_hat_prev, y_hat_future
-
-            return loss, rmses
+        del x_signal, y_signal, y_hat, x_temporal, y_temporal
+        return loss, rmses
 
     def train_step(self,
                    batch: List[torch.Tensor],
@@ -169,17 +162,17 @@ class Experiment:
 
         loss, rmses = self.common_step(batch, pos_encoding)
 
-        if self.model.ode_block.n_reg > 0:
-            reg_states = tuple(torch.mean(rs) for rs in self.model.reg_states)
-            reg_coeffs = self.model.reg_coeffs
+        if hasattr(self.model, 'ode_block'):
+            if self.model.ode_block.n_reg > 0:
+                reg_states = tuple(torch.mean(rs) for rs in self.model.reg_states)
+                reg_coeffs = self.model.reg_coeffs
 
-            reg_loss = sum(reg_state * coeff for reg_state, coeff in zip(reg_states, reg_coeffs) if coeff != 0)
-            loss += reg_loss
+                reg_loss = sum(reg_state * coeff for reg_state, coeff in zip(reg_states, reg_coeffs) if coeff != 0)
+                loss += reg_loss
 
-        self.model.reset_n_func_eval()
+            self.model.reset_n_func_eval()
         loss.backward()
         self.optimizer.step()
-        self.model.reset_n_func_eval()
         loss_value = loss.item()
 
         del batch, loss
@@ -216,19 +209,36 @@ class Experiment:
         """
         inmemory_data = self.opt.get('in_memory')
         data_root_arg = self.opt.get('data_path')
-
+        dataset_name = self.opt.get('dataset')
+        add_temporal_features = self.opt.get('add_temporal_features')
         data_root = Path(__file__).parent.parent if not data_root_arg else Path(data_root_arg)
-
+        tag = f"{dataset_name}" if not add_temporal_features else f"{dataset_name}_aug"
         if inmemory_data:
-            data_path = data_root / 'data' / 'inmemory'
+            data_path = data_root / 'data' / 'inmemory' / tag
             self.dataset = MetrLaInMemory(root=str(data_path.absolute()),
                                           n_previous_steps=self.n_previous_steps,
                                           n_future_steps=self.n_future_steps)
         else:
-            data_path = data_root / 'data' / 'disk'
+            data_path = data_root / 'data' / 'disk' / tag
             self.dataset = MetrLa(root=str(data_path.absolute()),
                                   n_previous_steps=self.n_previous_steps,
                                   n_future_steps=self.n_future_steps)
+
+        if self.opt.get('load_positional_embeddings'):
+            positional_embeddings_path = osp.join(data_path, 'positional_embeddings.pt')
+            if not osp.exists(positional_embeddings_path):
+                generator = Node2VecEmbedder(edge_index=self.dataset.edge_index,
+                                             embedding_dim=self.opt['d_hidden'],
+                                             walk_length=20,
+                                             context_size=16,
+                                             walks_per_node=16,
+                                             num_negative_samples=1,
+                                             p=1,
+                                             q=1,
+                                             n_epochs=50)
+
+                torch.save(generator.generate_embeddings(), positional_embeddings_path)
+            self.opt['positional_embeddings'] = torch.load(positional_embeddings_path)
 
         self.datamodule = MetrLaDataModule(self.opt,
                                            dataset=self.dataset)
@@ -245,8 +255,9 @@ class Experiment:
         self.set_optimizer(params)
 
         self.task = Task.init(project_name='Graph Diffusion Traffic Forecasting',
-                              task_name='Train Task - V.0.1',
-                              task_type=TaskTypes.training)
+                              task_name='Train Task',
+                              task_type=TaskTypes.training,
+                              reuse_last_task_id=False)
 
         self.clearml_logger = self.task.logger
 
@@ -259,9 +270,14 @@ class Experiment:
             model = GraphDiffusionRecurrentNet(self.opt, self.dataset, self.device).to(self.device)
         elif model_tag == 'ode':
             model = OdeNet(self.opt, self.dataset, self.device).to(self.device)
+        elif model_tag == 'gman':
+            model = GraphMultiAttentionNet(self.opt, self.dataset, self.device).to(self.device)
+        elif model_tag == 'gman2':
+            model = GraphMultiAttentionNet(self.opt, self.dataset, self.device).to(self.device)
         else:
             raise ValueError('Invalid model name')
         self.model = model
+        self.use_temporal_features = True if model_tag in ['gman'] else False
 
     def set_optimizer(self,
                       params: Union[Iterable[torch.Tensor], Dict[AnyStr, torch.Tensor]]) -> None:
@@ -353,12 +369,12 @@ class Experiment:
             if early_stopping.early_stop:
                 self.logger.debug(f"Early stopping triggered after epoch {epoch}. No valid loss improvement in the "
                                   f"last {early_stopping.patience} epochs.")
-                self.task.update_output_model(self.model_path, "Model")
+                # self.task.update_output_model(self.model_path, "Model")
                 break
         self.logger.debug(f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_rmse}")
         if not early_stopping.early_stop:
             torch.save(self.best_model.state_dict(), self.model_path)
-            self.task.update_output_model(self.model_path, "Model")
+            # self.task.update_output_model(self.model_path, "Model")
 
     def test(self):
         test_rmses = []
@@ -380,6 +396,8 @@ class Experiment:
 
         self.logger.debug("Starting testing the model.")
         self.test()
+
+        self.task.close()
 
     def get_test_rmse(self):
         test_rmse_values = self.test_rmses.values()

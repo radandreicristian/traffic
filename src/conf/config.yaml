@@ -6,6 +6,7 @@ project_name:
 # The name of the dataset - Either "metr_la" or "pems_bay" (wip)
 dataset: metr_la
 
+add_temporal_features: True
 
 # Store the data in memory or on the disk
 in_memory: True
@@ -33,11 +34,11 @@ train_batch_size: 32
 test_batch_size: 32
 ##################################### Model Configuration ##########################################
 
-# 'gdr' (graph diffusion recurrent net) or 'lgdr' (latent graph diffusion recurrent net) or 'ode'
+# [lgdr, gdr, ode, vae, gman]
 model_type: lgdr
 
 # Size of the hidden feature vectors in the model (int)
-d_hidden: 32
+d_hidden: 64
 
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
 use_mlp_in: True
@@ -58,7 +59,7 @@ use_batch_norm: True
 optimizer: adam
 
 # Learning rate of the optimizer
-lr: 2e-3
+lr: 1e-3
 
 # Weight decay
 weight_decay: 5e-2
@@ -87,6 +88,8 @@ function: transformer
 
 # TODO add source? (bool)
 add_source: True
+
+n_blocks: 3
 
 ###################################### ODE Configuration ###########################################
 
@@ -185,19 +188,19 @@ use_beltrami: False
 # Attention - changes through the diffusion process
 # Rewiring - Happens at the start of the epoch based on features at t=0
 
-
+load_positional_embeddings: True
 ################################### Hyperparameter Optimization ###################################
 
 defaults:
-  - hydra/sweeper: optuna
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
 
 hydra:
   sweeper:
-    optuna_config:
-      direction: minimize
-      study_name: traffic_diffusion
-      storage: null
-      n_trials: 30
-      n_jobs: 1
-      sampler: tpe
+    direction: minimize
+    study_name: traffic_diffusion
+    storage: null
+    n_trials: 2
+    n_jobs: 1
+    sampler:
       seed: 21

@@ -89,9 +89,14 @@ class MetrLaDataModule(pl.LightningDataModule):
         :return: A tuple containing the x and y tensors.
         """
         x, y = zip(*batch)
-        x = torch.stack([x_ for x_ in x])
-        y = torch.stack([y_ for y_ in y])
-        return x, y
+
+        x_signal = torch.stack([x_[..., 0] for x_ in x]).unsqueeze(dim=-1)
+        y_signal = torch.stack([y_[..., 0] for y_ in y]).unsqueeze(dim=-1)
+
+        x_temporal = torch.stack([x_[..., 1:] for x_ in x])
+        y_temporal = torch.stack([y_[..., 1:] for y_ in y])
+
+        return x_signal, y_signal, x_temporal, y_temporal
 
     @staticmethod
     def ondisk_collate_fn(batch: Iterable[Data]):
