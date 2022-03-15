@@ -16,7 +16,7 @@ from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory
 
 from data.metrla_datamodule import MetrLaDataModule
-from model import GMAN2, GraphMultiAttentionNet, LatentGraphDiffusionRecurrentNet, OdeNet, GraphDiffusionRecurrentNet
+from model import GraphMultiAttentionNet, LatentGraphDiffusionRecurrentNet, OdeNet, GraphDiffusionRecurrentNet
 from src.util.generate_node2vec import Node2VecEmbedder
 from util.earlystopping import EarlyStopping
 import os.path as osp
