@@ -17,7 +17,7 @@ from torch_geometric.datasets import MetrLa, MetrLaInMemory
 
 from data.metrla_datamodule import MetrLaDataModule
 from model import GraphMultiAttentionNet, LatentGraphDiffusionRecurrentNet, OdeNet, GraphDiffusionRecurrentNet
-from src.util.generate_node2vec import Node2VecEmbedder
+from util.generate_node2vec import Node2VecEmbedder
 from util.earlystopping import EarlyStopping
 import os.path as osp
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
