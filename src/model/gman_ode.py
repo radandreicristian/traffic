@@ -1,12 +1,15 @@
 """Source:
 https://github.com/benedekrozemberczki/pytorch_geometric_temporal/blob/master/torch_geometric_temporal/nn/attention/gman.py"""
-from typing import Tuple, List, Union, Optional, Callable
+from typing import Tuple, List, Union, Optional, Callable, Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric.data
 from einops import rearrange, repeat
+from model import BaseGNN
+from model.ode.blocks import get_ode_block
+from model.ode.blocks.funcs import get_ode_function
 from torch import Tensor
 
 
@@ -131,12 +134,12 @@ class SpatioTemporalEmbedding(nn.Module):
         super(SpatioTemporalEmbedding, self).__init__()
         self.fully_connected_spatial = FullyConnected(in_features=[d_hidden, d_hidden],
                                                       out_features=[d_hidden, d_hidden],
-                                                      activations=[f.relu, None],
+                                                      activations=[f.softplus, None],
                                                       bn_decay=bn_decay,
                                                       use_bias=use_bias)
         self.fully_connected_temporal = FullyConnected(in_features=[2, d_hidden],
                                                        out_features=[d_hidden, d_hidden],
-                                                       activations=[f.relu, None],
+                                                       activations=[f.softplus, None],
                                                        bn_decay=bn_decay,
                                                        use_bias=use_bias)
 
@@ -161,50 +164,69 @@ class SpatioTemporalEmbedding(nn.Module):
         return spatial_embeddings + temporal_embeddings
 
 
-class SpatialAttention(nn.Module):
+class SpatialAttention(BaseGNN):
     def __init__(self,
-                 d_hidden,
-                 n_heads,
-                 bn_decay) -> None:
-        super(SpatialAttention, self).__init__()
-        assert d_hidden % n_heads == 0, "Hidden size not divisible by number of heads."
+                 opt: dict,
+                 n_nodes,
+                 edge_index,
+                 edge_attr,
+                 device: torch.device) -> None:
+        self.device = device
+        self.edge_index, self.edge_attr = edge_index, edge_attr
 
-        self.d_head = d_hidden // n_heads
-        self.n_heads = n_heads
+        self.n_previous_steps = opt['n_previous_steps']
+        self.n_future_steps = opt['n_future_steps']
 
-        self.fully_connected_q = FullyConnected(in_features=2 * d_hidden,
-                                                out_features=d_hidden,
-                                                activations=f.relu,
-                                                bn_decay=bn_decay)
+        self.n_nodes = n_nodes
 
-        self.fully_connected_k = FullyConnected(in_features=2 * d_hidden,
-                                                out_features=d_hidden,
-                                                activations=f.relu,
-                                                bn_decay=bn_decay)
+        super(SpatialAttention, self).__init__(opt=opt)
 
-        self.fully_connected_v = FullyConnected(in_features=2 * d_hidden,
-                                                out_features=d_hidden,
-                                                activations=f.relu,
-                                                bn_decay=bn_decay)
-        self.fully_connected_out = FullyConnected(in_features=d_hidden,
-                                                  out_features=d_hidden,
-                                                  activations=f.relu,
-                                                  bn_decay=bn_decay)
+        self.function = get_ode_function(opt)
+
+        time_tensor = torch.tensor([0, self.T])
+
+        self.d_hidden = opt.get('d_hidden')
+
+        self.ode_block = get_ode_block(opt)(ode_func=self.function,
+                                            reg_funcs=self.reg_funcs,
+                                            opt=opt,
+                                            edge_index=self.edge_index,
+                                            edge_attr=self.edge_attr,
+                                            n_nodes=self.n_nodes,
+                                            t=time_tensor,
+                                            device=self.device)
+
+        self.fully_connected_out = FullyConnected(in_features=self.d_hidden,
+                                                  out_features=self.d_hidden,
+                                                  activations=f.softplus,
+                                                  bn_decay=self.d_hidden)
+        self.reg_states: Optional[List[Any]] = None
 
     def forward(self, x, ste):
-        batch_size, _, _, _ = x.shape
-        x = torch.cat((x, ste), dim=-1)
-        queries = torch.cat(torch.split(self.fully_connected_q(x), self.d_head, dim=-1), dim=0)
-        keys = torch.cat(torch.split(self.fully_connected_k(x), self.d_head, dim=-1), dim=0)
-        values = torch.cat(torch.split(self.fully_connected_v(x), self.d_head, dim=-1), dim=0)
+        batch_size, seq_len, n_nodes, d_hidden = x.shape
 
-        keys = rearrange(keys, 'bxn_heads seq_len n_nodes d_head -> bxn_heads seq_len d_head n_nodes')
+        x = rearrange(x, 'batch seq_len n_nodes d_hidden -> (batch seq_len) n_nodes d_hidden')
 
-        attention_scores = f.softmax(queries @ keys / self.d_head ** .5, dim=-1)
-        attention = torch.cat(torch.split(attention_scores @ values, batch_size, dim=0), dim=-1)
+        if self.opt['use_batch_norm']:
+            x = self.rearrange_batch_norm(x)
 
-        del queries, keys, values, attention_scores
-        return self.fully_connected_out(attention)
+        if self.opt['use_augmentation']:
+            x = self.augment_up(x)
+
+        self.ode_block.set_x0(x)
+
+        if self.training and self.ode_block.n_reg > 0:
+            z, self.reg_states = self.ode_block(x)
+        else:
+            z = self.ode_block(x)
+
+        if self.opt['use_augmentation']:
+            z = self.augment_down(z)
+
+        z = rearrange(z, '(batch seq_len) n_nodes d_hidden -> batch seq_len n_nodes d_hidden', batch=batch_size)
+
+        return self.fully_connected_out(z)
+
 
 class TemporalAttention(nn.Module):
     def __init__(self,
@@ -220,21 +242,21 @@ class TemporalAttention(nn.Module):
         self.use_mask = use_mask
         self.fully_connected_q = FullyConnected(in_features=2 * d_hidden,
                                                 out_features=d_hidden,
-                                                activations=f.relu,
+                                                activations=f.softplus,
                                                 bn_decay=bn_decay)
 
         self.fully_connected_k = FullyConnected(in_features=2 * d_hidden,
                                                 out_features=d_hidden,
-                                                activations=f.relu,
+                                                activations=f.softplus,
                                                 bn_decay=bn_decay)
 
         self.fully_connected_v = FullyConnected(in_features=2 * d_hidden,
                                                 out_features=d_hidden,
-                                                activations=f.relu,
+                                                activations=f.softplus,
                                                 bn_decay=bn_decay)
         self.fully_connected_out = FullyConnected(in_features=d_hidden,
                                                   out_features=d_hidden,
-                                                  activations=f.relu,
+                                                  activations=f.softplus,
                                                   bn_decay=bn_decay)
 
     def forward(self, x, ste) -> Tensor:
@@ -279,7 +301,7 @@ class GatedFusion(nn.Module):
 
         self.fully_connected_out = FullyConnected(in_features=[d_hidden, d_hidden],
                                                   out_features=[d_hidden, d_hidden],
-                                                  activations=[f.relu, None],
+                                                  activations=[f.softplus, None],
                                                   bn_decay=bn_decay)
 
     def forward(self,
@@ -296,10 +318,14 @@ class GatedFusion(nn.Module):
 
 
 class SpatioTemporalAttention(nn.Module):
-    def __init__(self, n_heads, d_hidden, bn_decay):
+    def __init__(self, n_heads, d_hidden, bn_decay, opt, edge_index, edge_attr, n_nodes, device):
         super(SpatioTemporalAttention, self).__init__()
 
-        self.spatial_attention = SpatialAttention(d_hidden=d_hidden, n_heads=n_heads, bn_decay=bn_decay)
+        self.spatial_attention = SpatialAttention(opt=opt,
+                                                  edge_index=edge_index,
+                                                  edge_attr=edge_attr,
+                                                  n_nodes=n_nodes,
+                                                  device=device)
         self.temporal_attention = TemporalAttention(d_hidden=d_hidden, n_heads=n_heads, bn_decay=bn_decay)
         self.gated_fusion = GatedFusion(d_hidden=d_hidden, bn_decay=bn_decay)
 
@@ -323,21 +349,21 @@ class TransformAttention(nn.Module):
         self.d_head = d_hidden // n_heads
         self.fc_query = FullyConnected(in_features=d_hidden,
                                        out_features=d_hidden,
-                                       activations=f.relu,
+                                       activations=f.softplus,
                                        bn_decay=bn_decay)
 
         self.fc_key = FullyConnected(in_features=d_hidden,
                                      out_features=d_hidden,
-                                     activations=f.relu,
+                                     activations=f.softplus,
                                      bn_decay=bn_decay)
 
         self.fc_value = FullyConnected(in_features=d_hidden,
                                        out_features=d_hidden,
-                                       activations=f.relu,
+                                       activations=f.softplus,
                                        bn_decay=bn_decay)
         self.fully_connected_out = FullyConnected(in_features=d_hidden,
                                                   out_features=d_hidden,
-                                                  activations=f.relu,
+                                                  activations=f.softplus,
                                                   bn_decay=bn_decay)
 
     def forward(self,
@@ -359,12 +385,12 @@ class TransformAttention(nn.Module):
         return self.fully_connected_out(torch.cat(torch.split(attention, batch_size, dim=0), dim=-1))
 
 
-class GraphMultiAttentionNet(nn.Module):
+class GraphMultiAttentionNetOde(nn.Module):
     def __init__(self,
                  opt: dict,
                  dataset: torch_geometric.data.Dataset,
                  device: torch.device):
-        super(GraphMultiAttentionNet, self).__init__()
+        super(GraphMultiAttentionNetOde, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get('d_hidden')
@@ -375,6 +401,10 @@ class GraphMultiAttentionNet(nn.Module):
         self.n_future = opt.get('n_future_steps')
         self.n_blocks = opt.get('n_blocks')
 
+        self.edge_index, self.edge_attr = dataset.get_adjacency_matrix()
+        self.n_nodes = dataset[0][0].size()[1] if opt['in_memory'] else dataset[0].x.size()[1]
+
+        self.opt=opt
         # Todo - This will require grad later)
         self.positional_embeddings = nn.Parameter(data=opt.get('positional_embeddings'), requires_grad=False)
         self.st_embedding = SpatioTemporalEmbedding(d_hidden=self.d_hidden,
@@ -382,22 +412,32 @@ class GraphMultiAttentionNet(nn.Module):
 
         self.encoder = nn.ModuleList([SpatioTemporalAttention(n_heads=self.n_heads,
                                                               d_hidden=self.d_hidden,
-                                                              bn_decay=self.bn_decay) for _ in range(self.n_blocks)])
+                                                              bn_decay=self.bn_decay,
+                                                              opt=self.opt,
+                                                              edge_index=self.edge_index,
+                                                              edge_attr=self.edge_attr,
+                                                              n_nodes=self.n_nodes,
+                                                              device=self.device) for _ in range(self.n_blocks)])
         self.transform_attention = TransformAttention(d_hidden=self.d_hidden,
                                                       n_heads=self.n_heads,
                                                       bn_decay=self.bn_decay)
         self.decoder = nn.ModuleList([SpatioTemporalAttention(n_heads=self.n_heads,
                                                               d_hidden=self.d_hidden,
-                                                              bn_decay=self.bn_decay) for _ in range(self.n_blocks)])
+                                                              bn_decay=self.bn_decay,
+                                                              opt=self.opt,
+                                                              edge_index=self.edge_index,
+                                                              edge_attr=self.edge_attr,
+                                                              n_nodes=self.n_nodes,
+                                                              device=self.device) for _ in range(self.n_blocks)])
 
         self.fc_in = FullyConnected(in_features=[1, self.d_hidden],
                                     out_features=[self.d_hidden, self.d_hidden],
-                                    activations=[f.relu, None],
+                                    activations=[f.softplus, None],
                                     bn_decay=self.bn_decay)
 
         self.fc_out = FullyConnected(in_features=[self.d_hidden, self.d_hidden],
                                      out_features=[self.d_hidden, 1],
-                                     activations=[f.relu, None],
+                                     activations=[f.softplus, None],
                                      bn_decay=self.bn_decay)
 
     def forward(self,

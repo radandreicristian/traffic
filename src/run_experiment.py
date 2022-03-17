@@ -1,5 +1,7 @@
 import gc
 import logging
+import os
+import os.path as osp
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
@@ -16,10 +18,11 @@ from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory
 
 from data.metrla_datamodule import MetrLaDataModule
-from model import GraphMultiAttentionNet, LatentGraphDiffusionRecurrentNet, OdeNet, GraphDiffusionRecurrentNet
-from util.generate_node2vec import Node2VecEmbedder
+from model import GraphMultiAttentionNet, LatentGraphDiffusionRecurrentNet, OdeNet, GraphDiffusionRecurrentNet, \
+    GraphMultiAttentionNetOde
 from util.earlystopping import EarlyStopping
-import os.path as osp
+from util.generate_node2vec import Node2VecEmbedder
+
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 
 
@@ -225,17 +228,12 @@ class Experiment:
                                   n_future_steps=self.n_future_steps)
 
         if self.opt.get('load_positional_embeddings'):
-            positional_embeddings_path = osp.join(data_path, 'positional_embeddings.pt')
+            d_hidden = self.opt.get('d_hidden')
+            positional_embeddings_path = osp.join(data_path, f'positional_embeddings_{d_hidden}d.pt')
             if not osp.exists(positional_embeddings_path):
-                generator = Node2VecEmbedder(edge_index=self.dataset.edge_index,
-                                             embedding_dim=self.opt['d_hidden'],
-                                             walk_length=20,
-                                             context_size=16,
-                                             walks_per_node=16,
-                                             num_negative_samples=1,
-                                             p=1,
-                                             q=1,
-                                             n_epochs=50)
+                generator = Node2VecEmbedder(edge_index=self.dataset.edge_index, embedding_dim=d_hidden,
+                                             walk_length=20, context_size=16, walks_per_node=16, num_negative_samples=1,
+                                             p=1, q=1, n_epochs=50)
 
                 torch.save(generator.generate_embeddings(), positional_embeddings_path)
             self.opt['positional_embeddings'] = torch.load(positional_embeddings_path)
@@ -254,30 +252,26 @@ class Experiment:
         params = [p for p in self.model.parameters() if p.requires_grad]
         self.set_optimizer(params)
 
-        self.task = Task.init(project_name='Graph Diffusion Traffic Forecasting',
-                              task_name='Train Task',
-                              task_type=TaskTypes.training,
-                              reuse_last_task_id=False)
+        self.task = Task.init(project_name='Graph Diffusion Traffic Forecasting',  task_name='Train Task',
+                              task_type=TaskTypes.training, reuse_last_task_id=False)
 
         self.clearml_logger = self.task.logger
 
     def set_model(self) -> None:
-        model_tag = self.opt['model_type']
+        models = {'lgdr': LatentGraphDiffusionRecurrentNet,
+                  'gdr': GraphDiffusionRecurrentNet,
+                  'ode': OdeNet,
+                  'gman': GraphMultiAttentionNet,
+                  'gman2': GraphMultiAttentionNetOde}
 
-        if model_tag == 'lgdr':
-            model = LatentGraphDiffusionRecurrentNet(self.opt, self.dataset, self.device).to(self.device)
-        elif model_tag == 'gdr':
-            model = GraphDiffusionRecurrentNet(self.opt, self.dataset, self.device).to(self.device)
-        elif model_tag == 'ode':
-            model = OdeNet(self.opt, self.dataset, self.device).to(self.device)
-        elif model_tag == 'gman':
-            model = GraphMultiAttentionNet(self.opt, self.dataset, self.device).to(self.device)
-        elif model_tag == 'gman2':
-            model = GraphMultiAttentionNet(self.opt, self.dataset, self.device).to(self.device)
-        else:
-            raise ValueError('Invalid model name')
-        self.model = model
-        self.use_temporal_features = True if model_tag in ['gman'] else False
+        temporal_feature_models = ['gman', 'gman2']
+        model_tag = self.opt['model_type']
+        try:
+            model_type = models[model_tag]
+        except KeyError:
+            raise
+        self.model = model_type(self.opt, self.dataset, self.device).to(self.device)
+        self.use_temporal_features = True if model_tag in temporal_feature_models else False
 
     def set_optimizer(self,
                       params: Union[Iterable[torch.Tensor], Dict[AnyStr, torch.Tensor]]) -> None:
@@ -410,6 +404,8 @@ class Experiment:
 def main(config: DictConfig):
     experiment = Experiment(config)
     experiment.run()
+
+    # Return the experiment test RMSE so that it can be integrated in an optuna hyperparameter search.
     return experiment.get_test_rmse()
 
 
@@ -417,5 +413,7 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
+        # Am I asking for too much when I am thinking that the Python process should close upon CTRL+C? Guess so.
         torch.cuda.empty_cache()
         gc.collect()
+        os.system('pkill -9 python')

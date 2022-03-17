@@ -18,27 +18,27 @@ data_norm: rw
 # Weights of self-loops (for the weighted adjacency matrix)
 self_loop_weight: 1.
 
-valid_percentage: .2
+valid_percentage: .1
 
-test_percentage: .2
+test_percentage: .3
 
 # There's around 32K points - ~20k train, ~6k valid, ~6k test
 sample_dataset: False
 
 # These sampling factors leave 32/32/32 samples in train/valid/test - Just for quick experimentation purposes.
-sample_train_factor: 0.0016
-sample_valid_factor: 0.0048
-sample_test_factor: 0.0048
+sample_train_factor: 0.016
+sample_valid_factor: 0.0072
+sample_test_factor: 0.0024
 
-train_batch_size: 32
-test_batch_size: 32
+train_batch_size: 4
+test_batch_size: 4
 ##################################### Model Configuration ##########################################
 
-# [lgdr, gdr, ode, vae, gman]
-model_type: lgdr
+# [lgdr, gdr, ode, vae, gman, gman2]
+model_type: gman2
 
 # Size of the hidden feature vectors in the model (int)
-d_hidden: 64
+d_hidden: 32
 
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
 use_mlp_in: True
@@ -89,12 +89,12 @@ function: transformer
 # TODO add source? (bool)
 add_source: True
 
-n_blocks: 3
+n_blocks: 1
 
 ###################################### ODE Configuration ###########################################
 
 # End time of the ODE integrator (float)
-time: 2.
+time: 1.
 
 # Augment: double the length of feature vectors by appending zeros to stabilize ODE learning (bool)
 use_augmentation: True
@@ -117,14 +117,14 @@ adjoint_solver: dopri5
 adjoint_step_size: 1.
 
 # Tolerance scale - Multiplier for absolute and relative tolerance (float)
-tol_scale: 10.
-tol_scale_adjoint: 10.
+tol_scale: 1000.
+tol_scale_adjoint: 10000.
 
 # Number of ODE blocks to run
 n_ode_blocks: 1
 
 # Maximum number of function evaluations in each epoch/batch? (int) {<max_nfe>}
-max_func_evals: 1000
+max_func_evals: 100
 
 # Use early stopping of the ODE integrator on inference (bool) {no_early}
 early_stopping_integrator: True
