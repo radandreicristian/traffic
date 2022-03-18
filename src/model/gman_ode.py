@@ -207,6 +207,8 @@ class SpatialAttention(BaseGNN):
 
         x = rearrange(x, 'batch seq_len n_nodes d_hidden -> (batch seq_len) n_nodes d_hidden')
 
+        x = f.dropout(x, self.opt['p_dropout_model'], training=self.training)
+
         if self.opt['use_batch_norm']:
             x = self.rearrange_batch_norm(x)
 
@@ -469,5 +471,5 @@ class GraphMultiAttentionNetOde(nn.Module):
         for block in self.encoder:
             x = block(x, st_embeddings_future)
 
-        x = torch.squeeze(self.fc_out(x), 3)
+        x = torch.squeeze(self.fc_out(x), dim=3)
         return x

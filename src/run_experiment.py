@@ -133,8 +133,8 @@ class Experiment:
         """
         x_signal, y_signal, x_temporal, y_temporal = batch
 
-        # (batch_size, n_future, n_nodes)
-        y_signal = torch.squeeze(y_signal)
+        # (batch_size, n_future, n_nodes, 1) -> (batch_size, n_future, n_nodes)
+        y_signal = torch.squeeze(y_signal, dim=-1)
 
         if self.use_temporal_features:
             y_hat = self.model(x_signal, x_temporal, y_temporal) if not use_best_model else self.best_model(x_signal,
