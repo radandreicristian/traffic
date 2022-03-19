@@ -72,6 +72,11 @@ class MetrLaDataModule(pl.LightningDataModule):
 
         logger.debug(f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}")
         self.train_dataset = Subset(self.dataset, train_indices)
+
+        train_features = torch.stack([x[:, :, 0] for x, _ in self.train_dataset])
+        self.train_mean = torch.mean(train_features)
+        self.train_std = torch.std(train_features)
+        print(self.train_mean, self.train_std)
         self.valid_dataset = Subset(self.dataset, valid_indices)
         self.test_dataset = Subset(self.dataset, test_indices)
 
@@ -79,8 +84,7 @@ class MetrLaDataModule(pl.LightningDataModule):
 
         self.collate_fn = self.inmemory_collate_fn if inmemory_data else self.ondisk_collate_fn
 
-    @staticmethod
-    def inmemory_collate_fn(batch: Iterable[Data]):
+    def inmemory_collate_fn(self, batch: Iterable[Data]):
         """
         Splits the batch into tensors corresponding to the predictor (x) and the target (y) variables.
 
@@ -90,7 +94,10 @@ class MetrLaDataModule(pl.LightningDataModule):
         """
         x, y = zip(*batch)
 
-        x_signal = torch.stack([x_[..., 0] for x_ in x]).unsqueeze(dim=-1)
+        def normalize(element):
+            return (element - self.train_mean) / self.train_std
+
+        x_signal = torch.stack([normalize(x_[..., 0]) for x_ in x]).unsqueeze(dim=-1)
         y_signal = torch.stack([y_[..., 0] for y_ in y]).unsqueeze(dim=-1)
 
         x_temporal = torch.stack([x_[..., 1:] for x_ in x])
@@ -107,6 +114,7 @@ class MetrLaDataModule(pl.LightningDataModule):
         :param batch: A batch consisting of an iterable of Data points.
         :return: A tuple containing the x and y tensors.
         """
+        # todo - fix ondisk collate for multidimensinoal features :)
         x = torch.stack([data.x for data in batch])
         y = torch.stack([data.y for data in batch])
         return x, y

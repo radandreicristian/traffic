@@ -30,15 +30,15 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-train_batch_size: 4
-test_batch_size: 4
+train_batch_size: 8
+test_batch_size: 8
 ##################################### Model Configuration ##########################################
 
 # [lgdr, gdr, ode, vae, gman, gman2]
-model_type: gman2
+model_type: gman
 
 # Size of the hidden feature vectors in the model (int)
-d_hidden: 32
+d_hidden: 64
 
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
 use_mlp_in: True
@@ -50,7 +50,7 @@ use_mlp_out: True
 p_dropout_in: .4
 
 # Dropout rate of the model (float, <1.)
-p_dropout_model: .4
+p_dropout_model: .5
 
 # Batch normalization (bool) {batch_norm}
 use_batch_norm: True
@@ -65,7 +65,7 @@ lr: 1e-3
 weight_decay: 5e-2
 
 # Number of epochs for training
-n_epochs: 50
+n_epochs: 1
 
 # The factor of matrix A - Used only in C(ontinuous)GNN  src/CGNN.py (float <= 1.)
 # Todo - Read more on this
@@ -89,7 +89,7 @@ function: transformer
 # TODO add source? (bool)
 add_source: True
 
-n_blocks: 1
+n_blocks: 3
 
 ###################################### ODE Configuration ###########################################
 
@@ -106,7 +106,7 @@ solver: dopri5
 step_size: 1.
 
 # Maximum number of ODE iterations (int)
-max_iters: 100
+max_iters: 1000
 
 # Use adjoint ODE method to reduce memory (bool)
 # Todo - Read more on this
@@ -124,7 +124,7 @@ tol_scale_adjoint: 10000.
 n_ode_blocks: 1
 
 # Maximum number of function evaluations in each epoch/batch? (int) {<max_nfe>}
-max_func_evals: 100
+max_func_evals: 1000
 
 # Use early stopping of the ODE integrator on inference (bool) {no_early}
 early_stopping_integrator: True
@@ -162,7 +162,7 @@ reweight_attention: True
 attention_type: scaled_dot
 
 # Use squareplus instead of softmax: https://arxiv.org/pdf/2112.11687.pdf
-square_plus: False
+square_plus: True
 
 ################################### Regularization Configuration ###################################
 jacobian_norm2: False # int_t ||df/dx||_F^2

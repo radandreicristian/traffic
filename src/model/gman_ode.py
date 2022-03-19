@@ -337,7 +337,7 @@ class SpatioTemporalAttention(nn.Module):
         h = self.gated_fusion(h_spatial, h_temporal)
 
         del h_spatial, h_temporal
-        return x + h
+        return h + x
 
 
 class TransformAttention(nn.Module):
@@ -406,7 +406,7 @@ class GraphMultiAttentionNetOde(nn.Module):
         self.edge_index, self.edge_attr = dataset.get_adjacency_matrix()
         self.n_nodes = dataset[0][0].size()[1] if opt['in_memory'] else dataset[0].x.size()[1]
 
-        self.opt=opt
+        self.opt = opt
         # Todo - This will require grad later)
         self.positional_embeddings = nn.Parameter(data=opt.get('positional_embeddings'), requires_grad=False)
         self.st_embedding = SpatioTemporalEmbedding(d_hidden=self.d_hidden,
