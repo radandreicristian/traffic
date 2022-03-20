@@ -32,13 +32,30 @@ sample_test_factor: 0.0024
 
 train_batch_size: 1
 test_batch_size: 1
+
+################################### Optimizer Configuration ########################################
+# Number of epochs for training
+n_epochs: 1
+
+# Optimizer (str, sgd/rmsprop/adam/adamax)
+optimizer: adam
+
+# Learning rate of the optimizer
+lr: 1e-3
+
+# Weight decay (L2 norm)
+weight_decay: 5e-2
+
+# Early stopping patience
+early_stop_patience: 7
+
 ##################################### Model Configuration ##########################################
 
 # [lgdr, gdr, ode, vae, gman, gman2]
 model_type: gman2
 
 # Size of the hidden feature vectors in the model (int)
-d_hidden: 64
+d_hidden: 32
 
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
 use_mlp_in: True
@@ -54,18 +71,6 @@ p_dropout_model: .5
 
 # Batch normalization (bool) {batch_norm}
 use_batch_norm: True
-
-# Optimizer (str, sgd/rmsprop/adam/adamax)
-optimizer: adam
-
-# Learning rate of the optimizer
-lr: 1e-3
-
-# Weight decay
-weight_decay: 5e-2
-
-# Number of epochs for training
-n_epochs: 1
 
 # The factor of matrix A - Used only in C(ontinuous)GNN  src/CGNN.py (float <= 1.)
 # Todo - Read more on this
@@ -109,7 +114,7 @@ step_size: 1.
 max_iters: 1000
 
 # Use adjoint ODE method to reduce memory (bool)
-# Todo - Read more on this
+# Todo - Read more on this - It's from the original neural ode paper
 adjoint: True
 
 # What solver to use when using adjoint method (str, adaptive_heun/dopri5/euler/rk4/midpoint)
@@ -150,7 +155,7 @@ n_heads: 8
 attention_norm_idx: 0
 
 # Projection size before applying attention (int)
-d_hidden_attention: 16
+d_hidden_attention: 32
 
 # Apply a feature transformation xW to the ODE (bool)
 mix_features: True

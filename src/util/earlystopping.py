@@ -13,7 +13,7 @@ class EarlyStopping:
 
     def __init__(self,
                  checkpoint_path: str,
-                 patience=4,
+                 patience,
                  verbose=False,
                  delta=0) -> None:
         """

@@ -62,7 +62,7 @@ class Conv2D(nn.Module):
         x = self.batch_norm(x)
         if self.activation is not None:
             x = self.activation(x)
-        return rearrange(x, 'b f n l -> b l n f')
+        return rearrange(x, 'batch n_features n_nodes seq_len -> batch seq_len n_nodes n_features')
 
 
 class FullyConnected(nn.Module):
@@ -206,6 +206,7 @@ class SpatialAttention(nn.Module):
         del queries, keys, values, attention_scores
         return self.fully_connected_out(attention)
 
+
 class TemporalAttention(nn.Module):
     def __init__(self,
                  d_hidden,
@@ -252,6 +253,9 @@ class TemporalAttention(nn.Module):
         if self.use_mask:
             mask = torch.tril(torch.ones(seq_len, seq_len).to(x.device))
             mask = repeat(mask, 'a b -> j n a b', j=batch_size * self.n_heads, n=n_nodes).to(torch.bool)
+
+            # The attention score becomes -(2**15)+1 for attention between timestep i and steps in the future.
+            # Applying softmax this score becomes ~0.
             condition = torch.tensor([-(2 ** 15) + 1], dtype=torch.float32).to(x.device)
             attention_scores = torch.where(mask, attention_scores, condition)
         attention_scores = f.softmax(attention_scores, dim=-1)

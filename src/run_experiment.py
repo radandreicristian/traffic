@@ -312,7 +312,8 @@ class Experiment:
         self.optimizer = optimizer
 
     def train(self):
-        early_stopping = EarlyStopping(checkpoint_path=self.model_path)
+        patience = self.opt['early_stop_patience']
+        early_stopping = EarlyStopping(checkpoint_path=self.model_path, patience=patience)
         for epoch in range(self.opt['n_epochs']):
             train_rmses = []
             train_losses = []
