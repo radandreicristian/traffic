@@ -23,19 +23,19 @@ valid_percentage: .1
 test_percentage: .3
 
 # There's around 32K points - ~20k train, ~6k valid, ~6k test
-sample_dataset: False
+sample_dataset: True
 
 # These sampling factors leave 32/32/32 samples in train/valid/test - Just for quick experimentation purposes.
 sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-train_batch_size: 8
-test_batch_size: 8
+train_batch_size: 1
+test_batch_size: 1
 ##################################### Model Configuration ##########################################
 
 # [lgdr, gdr, ode, vae, gman, gman2]
-model_type: gman
+model_type: gman2
 
 # Size of the hidden feature vectors in the model (int)
 d_hidden: 64
@@ -94,7 +94,7 @@ n_blocks: 3
 ###################################### ODE Configuration ###########################################
 
 # End time of the ODE integrator (float)
-time: 1.
+time: 2.
 
 # Augment: double the length of feature vectors by appending zeros to stabilize ODE learning (bool)
 use_augmentation: True
@@ -118,7 +118,7 @@ adjoint_step_size: 1.
 
 # Tolerance scale - Multiplier for absolute and relative tolerance (float)
 tol_scale: 1000.
-tol_scale_adjoint: 10000.
+tol_scale_adjoint: 1000.
 
 # Number of ODE blocks to run
 n_ode_blocks: 1
@@ -150,7 +150,7 @@ n_heads: 8
 attention_norm_idx: 0
 
 # Projection size before applying attention (int)
-d_hidden_attention: 32
+d_hidden_attention: 16
 
 # Apply a feature transformation xW to the ODE (bool)
 mix_features: True

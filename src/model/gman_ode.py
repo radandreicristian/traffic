@@ -196,6 +196,11 @@ class SpatialAttention(BaseGNN):
                                             t=time_tensor,
                                             device=self.device)
 
+        self.fully_connected_in = FullyConnected(in_features=self.d_hidden,
+                                                 out_features=self.d_hidden,
+                                                 activations=f.softplus,
+                                                 bn_decay=self.d_hidden)
+
         self.fully_connected_out = FullyConnected(in_features=self.d_hidden,
                                                   out_features=self.d_hidden,
                                                   activations=f.softplus,
@@ -205,29 +210,29 @@ class SpatialAttention(BaseGNN):
     def forward(self, x, ste):
         batch_size, seq_len, n_nodes, d_hidden = x.shape
 
-        x = rearrange(x, 'batch seq_len n_nodes d_hidden -> (batch seq_len) n_nodes d_hidden')
-
-        x = f.dropout(x, self.opt['p_dropout_model'], training=self.training)
+        h = self.fully_connected_in(x)
+        h = rearrange(h, 'batch seq_len n_nodes d_hidden -> (batch seq_len) n_nodes d_hidden')
+        h = f.dropout(h, self.opt['p_dropout_model'], training=self.training)
 
         if self.opt['use_batch_norm']:
-            x = self.rearrange_batch_norm(x)
+            h = self.rearrange_batch_norm(h)
 
         if self.opt['use_augmentation']:
-            x = self.augment_up(x)
+            h = self.augment_up(h)
 
-        self.ode_block.set_x0(x)
+        self.ode_block.set_x0(h)
 
         if self.training and self.ode_block.n_reg > 0:
-            z, self.reg_states = self.ode_block(x)
+            z, self.reg_states = self.ode_block(h)
         else:
-            z = self.ode_block(x)
+            z = self.ode_block(h)
 
         if self.opt['use_augmentation']:
             z = self.augment_down(z)
 
         z = rearrange(z, '(batch seq_len) n_nodes d_hidden -> batch seq_len n_nodes d_hidden', batch=batch_size)
 
-        return self.fully_connected_out(z)
+        return self.fully_connected_out(z) + x
 
 
 class TemporalAttention(nn.Module):
@@ -468,8 +473,11 @@ class GraphMultiAttentionNetOde(nn.Module):
 
         x = self.transform_attention(x, st_embeddings_previous, st_embeddings_future)
 
-        for block in self.encoder:
+        for block in self.decoder:
             x = block(x, st_embeddings_future)
 
         x = torch.squeeze(self.fc_out(x), dim=3)
         return x
+
+    def __repr__(self):
+        return self.__class__.__name__

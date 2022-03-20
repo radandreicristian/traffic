@@ -410,10 +410,9 @@ class GraphMultiAttentionNet(nn.Module):
 
         x = self.fc_in(x_signal)
 
-        first_future_index = x_temporal.shape[1]
-
         # temporal_features (batch_size, n_previous+n_future, n_nodes, 2)
         temporal_features = torch.cat((x_temporal, y_temporal), dim=1)
+        first_future_index = temporal_features.shape[1] // 2
 
         st_embeddings = self.st_embedding(spatial_embeddings=self.positional_embeddings,
                                           temporal_embeddings=temporal_features)
@@ -426,7 +425,7 @@ class GraphMultiAttentionNet(nn.Module):
 
         x = self.transform_attention(x, st_embeddings_previous, st_embeddings_future)
 
-        for block in self.encoder:
+        for block in self.decoder:
             x = block(x, st_embeddings_future)
 
         x = torch.squeeze(self.fc_out(x), 3)
