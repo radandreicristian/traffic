@@ -30,8 +30,8 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-train_batch_size: 1
-test_batch_size: 1
+train_batch_size: 2
+test_batch_size: 2
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
@@ -67,7 +67,7 @@ use_mlp_out: True
 p_dropout_in: .4
 
 # Dropout rate of the model (float, <1.)
-p_dropout_model: .5
+p_dropout_model: .15
 
 # Batch normalization (bool) {batch_norm}
 use_batch_norm: True
@@ -94,7 +94,7 @@ function: transformer
 # TODO add source? (bool)
 add_source: True
 
-n_blocks: 3
+n_blocks: 1
 
 ###################################### ODE Configuration ###########################################
 

@@ -1,0 +1,211 @@
+################################## Experiment Configuration #######################################
+
+project_name:
+##################################### Data Configuration ##########################################
+
+# The name of the dataset - Either "metr_la" or "pems_bay" (wip)
+dataset: metr_la
+
+add_temporal_features: True
+
+# Store the data in memory or on the disk
+in_memory: True
+
+# Random walk (rw) or symmetric gcn norm (gcn)
+# Todo - Read more on this
+data_norm: rw
+
+# Weights of self-loops (for the weighted adjacency matrix)
+self_loop_weight: 1.
+
+valid_percentage: .1
+
+test_percentage: .3
+
+# There's around 32K points - ~20k train, ~6k valid, ~6k test
+sample_dataset: False
+
+# These sampling factors leave 32/32/32 samples in train/valid/test - Just for quick experimentation purposes.
+sample_train_factor: 0.016
+sample_valid_factor: 0.0072
+sample_test_factor: 0.0024
+
+train_batch_size: 1
+test_batch_size: 1
+
+################################### Optimizer Configuration ########################################
+# Number of epochs for training
+n_epochs: 100
+
+# Optimizer (str, sgd/rmsprop/adam/adamax)
+optimizer: adam
+
+# Learning rate of the optimizer
+lr: 1e-3
+
+# Weight decay (L2 norm)
+weight_decay: 5e-2
+
+# Early stopping patience
+early_stop_patience: 7
+
+##################################### Model Configuration ##########################################
+
+# [lgdr, gdr, ode, vae, gman, gman2]
+model_type: gman2
+
+# Size of the hidden feature vectors in the model (int)
+d_hidden: 64
+
+# Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
+use_mlp_in: True
+
+# Adds an extra fully-connected layer at the end of the decoder (bool)
+use_mlp_out: True
+
+# Dropout percent of the input (float, <1.)
+p_dropout_in: .4
+
+# Dropout rate of the model (float, <1.)
+p_dropout_model: .5
+
+# Batch normalization (bool) {batch_norm}
+use_batch_norm: True
+
+# The factor of matrix A - Used only in C(ontinuous)GNN  src/CGNN.py (float <= 1.)
+# Todo - Read more on this
+alpha: 1.
+
+# Alpha dimension, scalar or vector (str, sc/vc)
+alpha_dim: sc
+
+# Apply sigmoid before multiplying by alpha (bool)
+alpha_sigmoid: True
+
+# Beta dimension, scalar or vector (str, sc/vc)
+beta_dim: sc
+
+# The ODE block - currently supports only "attention" (str, attention)
+block: attention
+
+# The ODE function - currently supports only "transformer"
+function: transformer
+
+# TODO add source? (bool)
+add_source: True
+
+n_blocks: 3
+
+###################################### ODE Configuration ###########################################
+
+# End time of the ODE integrator (float)
+time: 2.
+
+# Augment: double the length of feature vectors by appending zeros to stabilize ODE learning (bool)
+use_augmentation: True
+
+# Numerical solver (str, dopri5/euler/rk4/midpoint) {method}
+solver: dopri5
+
+# Step size of the ODE (float)
+step_size: 1.
+
+# Maximum number of ODE iterations (int)
+max_iters: 1000
+
+# Use adjoint ODE method to reduce memory (bool)
+# Todo - Read more on this - It's from the original neural ode paper
+adjoint: True
+
+# What solver to use when using adjoint method (str, adaptive_heun/dopri5/euler/rk4/midpoint)
+adjoint_solver: dopri5
+adjoint_step_size: 1.
+
+# Tolerance scale - Multiplier for absolute and relative tolerance (float)
+tol_scale: 1000.
+tol_scale_adjoint: 10000.
+
+# Number of ODE blocks to run
+n_ode_blocks: 1
+
+# Maximum number of function evaluations in each epoch/batch? (int) {<max_nfe>}
+max_func_evals: 1000
+
+# Use early stopping of the ODE integrator on inference (bool) {no_early}
+early_stopping_integrator: True
+
+# Multiplier for T used to evaluate best model (int) {earlystopxt}
+# Todo - Read more on this
+early_stop_multiplier: 3
+
+# Maximum number of steps for dopri5early test integrator, used if OOM
+max_test_steps: 100
+
+##################################### Attention Configuration #####################################
+# Slope for the x<0 part of the LeakyReLU
+leaky_relu_slope: .2
+
+# Dropout of attention weights
+attention_dropout: .3
+
+# Number of attention heads (int) {heads}
+n_heads: 8
+
+# Attention normalization index (int, 0/1) - 0: by rows, 1: by cols
+attention_norm_idx: 0
+
+# Projection size before applying attention (int)
+d_hidden_attention: 64
+
+# Apply a feature transformation xW to the ODE (bool)
+mix_features: True
+
+# Multiply attention scores by edge weights before softmax
+reweight_attention: True
+
+# Type of attention (str, scaled_dot/cosine/pearson/exp_kernel, currently only scaled_dot)
+attention_type: scaled_dot
+
+# Use squareplus instead of softmax: https://arxiv.org/pdf/2112.11687.pdf
+square_plus: True
+
+################################### Regularization Configuration ###################################
+jacobian_norm2: False # int_t ||df/dx||_F^2
+total_derivative: False # int_t ||df/dt||^2
+kinetic_energy: False # int_t ||f||_2^2
+directional_derivative: False # int_t ||(df/dx)^T f||^2
+
+
+##################################### Traffic Task Configuration ###################################
+n_previous_steps: 12
+
+n_future_steps: 12
+
+n_features: 12
+##################################### Rewiring Configuration ######################################
+# TODO
+
+##################################### Beltrami Configuration ######################################
+use_beltrami: False
+# TODO
+
+# Random Notes:
+# Attention - changes through the diffusion process
+# Rewiring - Happens at the start of the epoch based on features at t=0
+
+load_positional_embeddings: True
+################################### Hyperparameter Optimization ###################################
+
+defaults:
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+
+hydra:
+  sweeper:
+    direction: minimize
+    study_name: traffic_diffusion
+    storage: null
+    n_trials: 2
+    n_jobs: 1
+    sampler:
+      seed: 21

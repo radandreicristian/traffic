@@ -164,7 +164,53 @@ class SpatioTemporalEmbedding(nn.Module):
         return spatial_embeddings + temporal_embeddings
 
 
-class SpatialAttention(BaseGNN):
+class SpatialAttention(nn.Module):
+    def __init__(self,
+                 d_hidden,
+                 n_heads,
+                 bn_decay) -> None:
+        super(SpatialAttention, self).__init__()
+        assert d_hidden % n_heads == 0, "Hidden size not divisible by number of heads."
+
+        self.d_head = d_hidden // n_heads
+        self.n_heads = n_heads
+
+        self.fully_connected_q = FullyConnected(in_features=2 * d_hidden,
+                                                out_features=d_hidden,
+                                                activations=f.relu,
+                                                bn_decay=bn_decay)
+
+        self.fully_connected_k = FullyConnected(in_features=2 * d_hidden,
+                                                out_features=d_hidden,
+                                                activations=f.relu,
+                                                bn_decay=bn_decay)
+
+        self.fully_connected_v = FullyConnected(in_features=2 * d_hidden,
+                                                out_features=d_hidden,
+                                                activations=f.relu,
+                                                bn_decay=bn_decay)
+        self.fully_connected_out = FullyConnected(in_features=d_hidden,
+                                                  out_features=d_hidden,
+                                                  activations=f.relu,
+                                                  bn_decay=bn_decay)
+
+    def forward(self, x, ste):
+        batch_size, _, _, _ = x.shape
+        x = torch.cat((x, ste), dim=-1)
+        queries = torch.cat(torch.split(self.fully_connected_q(x), self.d_head, dim=-1), dim=0)
+        keys = torch.cat(torch.split(self.fully_connected_k(x), self.d_head, dim=-1), dim=0)
+        values = torch.cat(torch.split(self.fully_connected_v(x), self.d_head, dim=-1), dim=0)
+
+        keys = rearrange(keys, 'bxn_heads seq_len n_nodes d_head -> bxn_heads seq_len d_head n_nodes')
+
+        attention_scores = f.softmax(queries @ keys / self.d_head ** .5, dim=-1)
+        attention = torch.cat(torch.split(attention_scores @ values, batch_size, dim=0), dim=-1)
+
+        del queries, keys, values, attention_scores
+        return self.fully_connected_out(attention)
+
+
+class SpatialDiffusionOde(BaseGNN):
     def __init__(self,
                  opt: dict,
                  n_nodes,
@@ -179,7 +225,7 @@ class SpatialAttention(BaseGNN):
 
         self.n_nodes = n_nodes
 
-        super(SpatialAttention, self).__init__(opt=opt)
+        super(SpatialDiffusionOde, self).__init__(opt=opt)
 
         self.function = get_ode_function(opt)
 
@@ -195,7 +241,7 @@ class SpatialAttention(BaseGNN):
                                             n_nodes=self.n_nodes,
                                             t=time_tensor,
                                             device=self.device)
-
+        """
         self.fully_connected_in = FullyConnected(in_features=self.d_hidden,
                                                  out_features=self.d_hidden,
                                                  activations=f.softplus,
@@ -205,13 +251,14 @@ class SpatialAttention(BaseGNN):
                                                   out_features=self.d_hidden,
                                                   activations=f.softplus,
                                                   bn_decay=self.d_hidden)
+        """
         self.reg_states: Optional[List[Any]] = None
 
     def forward(self, x, ste):
         batch_size, seq_len, n_nodes, d_hidden = x.shape
 
-        h = self.fully_connected_in(x)
-        h = rearrange(h, 'batch seq_len n_nodes d_hidden -> (batch seq_len) n_nodes d_hidden')
+        # h = self.fully_connected_in(x)
+        h = rearrange(x, 'batch seq_len n_nodes d_hidden -> (batch seq_len) n_nodes d_hidden')
         h = f.dropout(h, self.opt['p_dropout_model'], training=self.training)
 
         if self.opt['use_batch_norm']:
@@ -232,7 +279,8 @@ class SpatialAttention(BaseGNN):
 
         z = rearrange(z, '(batch seq_len) n_nodes d_hidden -> batch seq_len n_nodes d_hidden', batch=batch_size)
 
-        return self.fully_connected_out(z) + x
+        return z
+        # return self.fully_connected_out(z)
 
 
 class TemporalAttention(nn.Module):
@@ -328,11 +376,11 @@ class SpatioTemporalAttention(nn.Module):
     def __init__(self, n_heads, d_hidden, bn_decay, opt, edge_index, edge_attr, n_nodes, device):
         super(SpatioTemporalAttention, self).__init__()
 
-        self.spatial_attention = SpatialAttention(opt=opt,
-                                                  edge_index=edge_index,
-                                                  edge_attr=edge_attr,
-                                                  n_nodes=n_nodes,
-                                                  device=device)
+        self.spatial_attention = SpatialDiffusionOde(opt=opt,
+                                                     edge_index=edge_index,
+                                                     edge_attr=edge_attr,
+                                                     n_nodes=n_nodes,
+                                                     device=device)
         self.temporal_attention = TemporalAttention(d_hidden=d_hidden, n_heads=n_heads, bn_decay=bn_decay)
         self.gated_fusion = GatedFusion(d_hidden=d_hidden, bn_decay=bn_decay)
 
@@ -342,7 +390,7 @@ class SpatioTemporalAttention(nn.Module):
         h = self.gated_fusion(h_spatial, h_temporal)
 
         del h_spatial, h_temporal
-        return h + x
+        return h
 
 
 class TransformAttention(nn.Module):
@@ -368,6 +416,7 @@ class TransformAttention(nn.Module):
                                        out_features=d_hidden,
                                        activations=f.softplus,
                                        bn_decay=bn_decay)
+
         self.fully_connected_out = FullyConnected(in_features=d_hidden,
                                                   out_features=d_hidden,
                                                   activations=f.softplus,
@@ -437,15 +486,11 @@ class GraphMultiAttentionNetOde(nn.Module):
                                                               n_nodes=self.n_nodes,
                                                               device=self.device) for _ in range(self.n_blocks)])
 
-        self.fc_in = FullyConnected(in_features=[1, self.d_hidden],
-                                    out_features=[self.d_hidden, self.d_hidden],
-                                    activations=[f.softplus, None],
-                                    bn_decay=self.bn_decay)
+        self.fc_in = FullyConnected(in_features=[1, self.d_hidden], out_features=[self.d_hidden, self.d_hidden],
+                                    activations=[f.softplus, None], bn_decay=self.bn_decay)
 
-        self.fc_out = FullyConnected(in_features=[self.d_hidden, self.d_hidden],
-                                     out_features=[self.d_hidden, 1],
-                                     activations=[f.softplus, None],
-                                     bn_decay=self.bn_decay)
+        self.fc_out = FullyConnected(in_features=[self.d_hidden, self.d_hidden], out_features=[self.d_hidden, 1],
+                                     activations=[f.softplus, None], bn_decay=self.bn_decay)
 
     def forward(self,
                 x_signal: torch.Tensor,
@@ -455,12 +500,12 @@ class GraphMultiAttentionNetOde(nn.Module):
         # x_temporal: (batch_size, n_previous, n_nodes, 2)
         # y_temporal: (batch_size, n_future, n_nodes, 2)
 
+        # x (batch_size, n_previous, n_nodes, d_hidden)
         x = self.fc_in(x_signal)
-
-        first_future_index = x_temporal.shape[1]
 
         # temporal_features (batch_size, n_previous+n_future, n_nodes, 2)
         temporal_features = torch.cat((x_temporal, y_temporal), dim=1)
+        first_future_index = temporal_features.shape[1] // 2
 
         st_embeddings = self.st_embedding(spatial_embeddings=self.positional_embeddings,
                                           temporal_embeddings=temporal_features)
