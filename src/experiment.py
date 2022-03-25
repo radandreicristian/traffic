@@ -5,7 +5,7 @@ import os.path as osp
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
-
+from torch import distributed
 import hydra
 import numpy as np
 import pytorch_lightning as pl

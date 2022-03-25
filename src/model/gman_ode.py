@@ -137,7 +137,7 @@ class SpatioTemporalEmbedding(nn.Module):
                                                       activations=[f.softplus, None],
                                                       bn_decay=bn_decay,
                                                       use_bias=use_bias)
-        self.fully_connected_temporal = FullyConnected(in_features=[2, d_hidden],
+        self.fully_connected_temporal = FullyConnected(in_features=[31, d_hidden],
                                                        out_features=[d_hidden, d_hidden],
                                                        activations=[f.softplus, None],
                                                        bn_decay=bn_decay,
@@ -390,7 +390,7 @@ class SpatioTemporalAttention(nn.Module):
         h = self.gated_fusion(h_spatial, h_temporal)
 
         del h_spatial, h_temporal
-        return h
+        return x + h
 
 
 class TransformAttention(nn.Module):

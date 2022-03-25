@@ -8,7 +8,7 @@ import torch
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
 from torch.utils.data import Subset, DataLoader
 from torch_geometric.data import Data, Dataset
-
+import torch.nn.functional as f
 logger = logging.getLogger('traffic')
 
 
@@ -84,9 +84,31 @@ class MetrLaDataModule(pl.LightningDataModule):
 
         self.collate_fn = self.inmemory_collate_fn if inmemory_data else self.ondisk_collate_fn
 
+    @staticmethod
+    def onehot_temporal(tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Convert temporal indices (hour of day and day of week) into one-hot encoded feature vector.
+
+        :param tensor: A tensor of shape (*, 2), where (..., 0) is the hour-of-day and (..., 1) is the day-of-week
+        feature.
+        :return: A tensor of shape (*, 31), where the last dimension is the concatenation of one-hot-encoded
+        hour-of-day (24d) and day-of-week (7d) vector.
+        """
+        hour_of_day = tensor[..., 0]
+        day_of_week = tensor[..., 1]
+
+        hour_of_day_one_hot = f.one_hot(hour_of_day.to(torch.long), num_classes=24)
+        day_of_week_one_hot = f.one_hot(day_of_week.to(torch.long), num_classes=7)
+
+        temporal_features = torch.cat((hour_of_day_one_hot, day_of_week_one_hot), dim=-1).to(torch.float32)
+        return temporal_features
+
+    def normalize(self, tensor: torch.Tensor) -> torch.Tensor:
+        return (tensor - self.train_mean) / self.train_std
+
     def inmemory_collate_fn(self, batch: Iterable[Data]):
         """
-        Splits the batch into tensors corresponding to the predictor (x) and the target (y) variables.
+        Split the batch into tensors corresponding to the predictor (x) and the target (y) variables.
 
         To be called when the data is loaded from the memory.
         :param batch: A batch consisting of an iterable of Data points.
@@ -94,19 +116,15 @@ class MetrLaDataModule(pl.LightningDataModule):
         """
         x, y = zip(*batch)
 
-        def normalize(element):
-            return (element - self.train_mean) / self.train_std
-
-        x_signal = torch.stack([normalize(x_[..., 0]) for x_ in x]).unsqueeze(dim=-1)
+        x_signal = torch.stack([self.normalize(x_[..., 0]) for x_ in x]).unsqueeze(dim=-1)
         y_signal = torch.stack([y_[..., 0] for y_ in y]).unsqueeze(dim=-1)
 
-        x_temporal = torch.stack([x_[..., 1:] for x_ in x])
-        y_temporal = torch.stack([y_[..., 1:] for y_ in y])
+        x_temporal = torch.stack([self.onehot_temporal(x_[..., 1:]) for x_ in x])
+        y_temporal = torch.stack([self.onehot_temporal(y_[..., 1:]) for y_ in y])
 
         return x_signal, y_signal, x_temporal, y_temporal
 
-    @staticmethod
-    def ondisk_collate_fn(batch: Iterable[Data]):
+    def ondisk_collate_fn(self, batch: Iterable[Data]):
         """
         Splits the batch into tensors corresponding to the predictor (x) and the target (y) variables.
 
@@ -114,10 +132,13 @@ class MetrLaDataModule(pl.LightningDataModule):
         :param batch: A batch consisting of an iterable of Data points.
         :return: A tuple containing the x and y tensors.
         """
-        # todo - fix ondisk collate for multidimensinoal features :)
-        x = torch.stack([data.x for data in batch])
-        y = torch.stack([data.y for data in batch])
-        return x, y
+        x_signal = torch.stack([self.normalize(data.x[..., 0]) for data in batch])
+        y_signal = torch.stack([data.x[..., 0] for data in batch])
+
+        x_temporal = torch.stack([self.onehot_temporal(data.x[..., 1:]) for data in batch])
+        y_temporal = torch.stack([self.onehot_temporal(data.y[..., 1:]) for data in batch])
+
+        return x_signal, y_signal, x_temporal, y_temporal
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         """
