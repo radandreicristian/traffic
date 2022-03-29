@@ -7,10 +7,12 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric.data
 from einops import rearrange, repeat
-from model import BaseGNN
-from model.ode.blocks import get_ode_block
-from model.ode.blocks.funcs import get_ode_function
+from src.model import BaseGNN
+from src.model.ode.blocks import get_ode_block
+from src.model.ode.blocks.funcs import get_ode_function
 from torch import Tensor
+
+from src.util.utils import get_number_of_nodes
 
 
 class Conv2D(nn.Module):
@@ -458,7 +460,7 @@ class GraphMultiAttentionNetOde(nn.Module):
         self.n_blocks = opt.get('n_blocks')
 
         self.edge_index, self.edge_attr = dataset.get_adjacency_matrix()
-        self.n_nodes = dataset[0][0].size()[1] if opt['in_memory'] else dataset[0].x.size()[1]
+        self.n_nodes = get_number_of_nodes(dataset=dataset, opt=opt)
 
         self.opt = opt
         # Todo - This will require grad later)

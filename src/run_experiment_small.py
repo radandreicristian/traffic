@@ -5,7 +5,7 @@ import hydra
 import torch
 from omegaconf import DictConfig
 
-from experiment import Experiment
+from src.experiment import Experiment
 
 
 @hydra.main(config_path='conf',
@@ -22,6 +22,7 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
+        print('triggered in main')
         # Am I asking for too much when I am thinking that the Python process should close upon CTRL+C? Guess so.
         torch.cuda.empty_cache()
         gc.collect()

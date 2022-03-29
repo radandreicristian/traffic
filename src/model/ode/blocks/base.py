@@ -11,8 +11,8 @@ import torch
 import torch.nn as nn
 from torchdiffeq import odeint, odeint_adjoint
 
-from model.ode.blocks.funcs.base import BaseOdeFunc
-from model.ode.blocks.funcs.regularized import RegularizedOdeFunc
+from src.model.ode.blocks.funcs.base import BaseOdeFunc
+from src.model.ode.blocks.funcs.regularized import RegularizedOdeFunc
 
 
 class BaseOdeBlock(nn.Module):

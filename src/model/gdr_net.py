@@ -6,9 +6,10 @@ import torch_geometric
 from einops import rearrange
 from torch.nn import GRUCell
 
-from model.base_net import BaseGNN
-from model.ode.blocks import get_ode_block
-from model.ode.blocks.funcs import get_ode_function
+from src.model.base_net import BaseGNN
+from src.model.ode.blocks import get_ode_block
+from src.model.ode.blocks.funcs import get_ode_function
+from src.util.utils import get_number_of_nodes
 
 
 class GraphDiffusionRecurrentNet(BaseGNN):
@@ -23,9 +24,7 @@ class GraphDiffusionRecurrentNet(BaseGNN):
         self.n_previous_steps = opt['n_previous_steps']
         self.n_future_steps = opt['n_future_steps']
 
-        in_memory = opt['in_memory']
-
-        self.n_nodes = dataset[0][0].size()[1] if in_memory else dataset[0].x.size()[1]
+        self.n_nodes = get_number_of_nodes(dataset=dataset, opt=opt)
 
         super(GraphDiffusionRecurrentNet, self).__init__(opt=opt)
 

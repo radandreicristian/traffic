@@ -10,10 +10,10 @@ from typing import Type, List, Callable, Union, Tuple, Any
 import torch
 from torchdiffeq import odeint_adjoint, odeint
 
-from model.ode.blocks.base import BaseOdeBlock
-from model.ode.blocks.funcs.base import BaseOdeFunc
-from model.ode.blocks.funcs.scaled_dot_attention import SparseGraphTransformerAttention
-from model.ode.blocks.utils import get_rw_adj
+from src.model.ode.blocks.base import BaseOdeBlock
+from src.model.ode.blocks.funcs.base import BaseOdeFunc
+from src.model.ode.blocks.funcs.scaled_dot_attention import SparseGraphTransformerAttention
+from src.model.ode.blocks.utils import get_rw_adj
 
 
 class AttentionOdeBlock(BaseOdeBlock):

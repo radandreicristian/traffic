@@ -9,7 +9,7 @@ from typing import List, Callable, Union, Tuple, Any
 import torch
 import torch.nn as nn
 
-from model.ode.blocks.funcs.base import BaseOdeFunc
+from src.model.ode.blocks.funcs.base import BaseOdeFunc
 
 
 class RegularizedOdeFunc(nn.Module):

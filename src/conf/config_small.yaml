@@ -1,15 +1,14 @@
 ################################## Experiment Configuration #######################################
+batch_log_frequency: 100
 
 project_name:
 ##################################### Data Configuration ##########################################
 
-# The name of the dataset - Either "metr_la" or "pems_bay" (wip)
-dataset: metr_la
+# The name of the dataset - Either "metr_la" or "pems_bay"
+dataset: pems_bay
 
-add_temporal_features: True
-
-# Store the data in memory or on the disk
-in_memory: True
+# On-disk loading (like torchvision) or in-memory loading ("mem" or "disk")
+dataset_loading_location: mem
 
 # Random walk (rw) or symmetric gcn norm (gcn)
 # Todo - Read more on this

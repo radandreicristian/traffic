@@ -1,18 +1,18 @@
 import logging
 from collections import Iterable
-from typing import Optional, Callable
+from typing import Optional, Callable, Sequence
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import torch.nn.functional as f
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
 from torch.utils.data import Subset, DataLoader
 from torch_geometric.data import Data, Dataset
-import torch.nn.functional as f
-logger = logging.getLogger('traffic')
 
+from src.util.constants import IN_MEMORY, ON_DISK
 
-class MetrLaDataModule(pl.LightningDataModule):
+class TrafficDataModule(pl.LightningDataModule):
     """A data module that holds the dataloaders for the MetrLa dataset."""
 
     def __init__(self,
@@ -23,7 +23,8 @@ class MetrLaDataModule(pl.LightningDataModule):
         :param opt: A dictionary of options.
         :param dataset: The dataset object.
         """
-        super(MetrLaDataModule, self).__init__()
+        super(TrafficDataModule, self).__init__()
+        self.logger = logging.getLogger('traffic')
 
         self.opt = opt
         self.dataset = dataset
@@ -34,13 +35,29 @@ class MetrLaDataModule(pl.LightningDataModule):
         self.valid_dataset: Optional[Dataset] = None
         self.test_dataset: Optional[Dataset] = None
 
-        self.collate_fn: Optional[Callable] = None
+        dataset_loading_location = opt.get('dataset_loading_location')
+
+        collate_fns = {IN_MEMORY: self.inmemory_collate_fn,
+                       ON_DISK: self.ondisk_collate_fn}
+
+        self.collate_fn = collate_fns[dataset_loading_location]
+
+        self.train_mean: Optional[torch.Tensor] = None
+        self.train_std: Optional[torch.Tensor] = None
         self.setup()
 
-    def sample(self, indices, stage):
-        sample = 'sample_dataset'
-        if self.opt[sample]:
-            sample_factor = f'sample_{stage}_factor'
+    def sample(self, indices: Sequence, split: str) -> Sequence:
+        """
+        Return sampled indices based on the configuration.
+
+        If the configuration specifies to sample the dataset, take the sample factor for the specified split and return
+        values sampled from the initial indices.
+        :param indices: A sequence (iterable, sized, reversible) of indices of data points in the original dataset.
+        :param split: The name of the split (train/valid/test).
+        :return: A numpy array containing either indices or a subset of it.
+        """
+        if self.opt['sample_dataset']:
+            sample_factor = f'sample_{split}_factor'
             factor = self.opt[sample_factor]
             rng = np.random.default_rng(21)
             indices = rng.choice(indices, int(float(factor) * len(indices)), replace=False)
@@ -70,19 +87,15 @@ class MetrLaDataModule(pl.LightningDataModule):
         valid_indices = self.sample(valid_indices, 'valid')
         test_indices = self.sample(test_indices, 'test')
 
-        logger.debug(f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}")
+        self.logger.debug(f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}")
         self.train_dataset = Subset(self.dataset, train_indices)
 
         train_features = torch.stack([x[:, :, 0] for x, _ in self.train_dataset])
         self.train_mean = torch.mean(train_features)
         self.train_std = torch.std(train_features)
-        print(self.train_mean, self.train_std)
+
         self.valid_dataset = Subset(self.dataset, valid_indices)
         self.test_dataset = Subset(self.dataset, test_indices)
-
-        inmemory_data = self.opt.get('in_memory')
-
-        self.collate_fn = self.inmemory_collate_fn if inmemory_data else self.ondisk_collate_fn
 
     @staticmethod
     def onehot_temporal(tensor: torch.Tensor) -> torch.Tensor:

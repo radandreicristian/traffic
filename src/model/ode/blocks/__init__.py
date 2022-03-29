@@ -1,7 +1,7 @@
 from typing import Type
 
-from model.ode.blocks.attention import AttentionOdeBlock
-from model.ode.blocks.base import BaseOdeBlock
+from src.model.ode.blocks.attention import AttentionOdeBlock
+from src.model.ode.blocks.base import BaseOdeBlock
 
 
 def get_ode_block(opt: dict) -> Type[BaseOdeBlock]:

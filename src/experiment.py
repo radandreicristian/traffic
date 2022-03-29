@@ -1,12 +1,9 @@
-import gc
 import logging
-import os
 import os.path as osp
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
-from torch import distributed
-import hydra
+
 import numpy as np
 import pytorch_lightning as pl
 import torch.cuda
@@ -15,13 +12,15 @@ from omegaconf import DictConfig
 from torch.nn.functional import mse_loss
 from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
-from torch_geometric.datasets import MetrLa, MetrLaInMemory
+from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInMemory
 
-from data.metrla_datamodule import MetrLaDataModule
-from model import GraphMultiAttentionNet, LatentGraphDiffusionRecurrentNet, OdeNet, GraphDiffusionRecurrentNet, \
+from src.util.utils import get_number_of_nodes
+from src.data.traffic_datamodule import TrafficDataModule
+from src.model import GraphMultiAttentionNet, LatentGraphDiffusionRecurrentNet, OdeNet, GraphDiffusionRecurrentNet, \
     GraphMultiAttentionNetOde
-from util.earlystopping import EarlyStopping
-from util.generate_node2vec import Node2VecEmbedder
+from src.util.constants import *
+from src.util.earlystopping import EarlyStopping
+from src.util.generate_node2vec import Node2VecEmbedder
 
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 
@@ -55,12 +54,14 @@ class Experiment:
         self.clearml_logger: Optional[Logger] = None
 
         self.logger = logging.getLogger('traffic')
-        self.logger.setLevel(logging.DEBUG)
 
         self.model_path = 'best_model.pt'
 
         self.use_temporal_features: Optional[bool] = None
         self.positional_embeddings: Optional[torch.Tensor] = None
+
+        self.batch_log_frequency = opt.get('batch_log_frequency', 50)
+        self.test_rmses: Optional[Dict] = None
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -203,29 +204,24 @@ class Experiment:
 
         return loss.item(), rmses
 
-    def setup(self):
-        """
-        Setup the experiment.
+    def setup_data(self):
+        datasets = {(METR_LA_DATASET_NAME, IN_MEMORY): MetrLaInMemory,
+                    (METR_LA_DATASET_NAME, ON_DISK): MetrLa,
+                    (PEMS_BAY_DATASET_NAME, IN_MEMORY): PemsBayInMemory,
+                    (PEMS_BAY_DATASET_NAME, ON_DISK): PemsBay}
 
-        Initializes the dataset, datamodule, experiment versioning,
-        :return:
-        """
-        inmemory_data = self.opt.get('in_memory')
-        data_root_arg = self.opt.get('data_path')
+        dataset_loading_location = self.opt.get('dataset_loading_location')
         dataset_name = self.opt.get('dataset')
-        add_temporal_features = self.opt.get('add_temporal_features')
+        data_root_arg = self.opt.get('data_path')
+
         data_root = Path(__file__).parent.parent if not data_root_arg else Path(data_root_arg)
-        tag = f"{dataset_name}" if not add_temporal_features else f"{dataset_name}_aug"
-        if inmemory_data:
-            data_path = data_root / 'data' / 'inmemory' / tag
-            self.dataset = MetrLaInMemory(root=str(data_path.absolute()),
-                                          n_previous_steps=self.n_previous_steps,
-                                          n_future_steps=self.n_future_steps)
-        else:
-            data_path = data_root / 'data' / 'disk' / tag
-            self.dataset = MetrLa(root=str(data_path.absolute()),
-                                  n_previous_steps=self.n_previous_steps,
-                                  n_future_steps=self.n_future_steps)
+
+        # This works on Path objects.
+        data_path = data_root / dataset_loading_location / dataset_name
+
+        self.dataset = datasets[(dataset_name, dataset_loading_location)](root=str(data_path.absolute()),
+                                                                          n_previous_steps=self.n_previous_steps,
+                                                                          n_future_steps=self.n_future_steps)
 
         if self.opt.get('load_positional_embeddings'):
             d_hidden = self.opt.get('d_hidden')
@@ -238,12 +234,23 @@ class Experiment:
                 torch.save(generator.generate_embeddings(), positional_embeddings_path)
             self.opt['positional_embeddings'] = torch.load(positional_embeddings_path)
 
-        self.datamodule = MetrLaDataModule(self.opt,
-                                           dataset=self.dataset)
+        self.datamodule = TrafficDataModule(self.opt,
+                                            dataset=self.dataset)
 
         self.train_dataloader = self.datamodule.train_dataloader()
         self.valid_dataloader = self.datamodule.val_dataloader()
         self.test_dataloader = self.datamodule.test_dataloader()
+
+        self.opt['n_nodes'] = get_number_of_nodes(self.dataset, self.opt)
+
+    def setup(self):
+        """
+        Setup the experiment.
+
+        Initializes the dataset, datamodule, experiment versioning,
+        :return:
+        """
+        self.setup_data()
 
         self.set_model()
 
@@ -252,7 +259,7 @@ class Experiment:
         params = [p for p in self.model.parameters() if p.requires_grad]
         self.set_optimizer(params)
 
-        self.task = Task.init(project_name='Graph Diffusion Traffic Forecasting',  task_name='Train Task',
+        self.task = Task.init(project_name='Graph Diffusion Traffic Forecasting', task_name='Train Task',
                               task_type=TaskTypes.training, reuse_last_task_id=False)
 
         self.clearml_logger = self.task.logger
@@ -326,7 +333,7 @@ class Experiment:
                 train_rmses.append(rmses)
                 end_time = time.time()
 
-                if idx % 50 == 0:
+                if idx % self.batch_log_frequency == 0:
                     self.logger.debug(f"[Train|Ep.{epoch}|B.{idx}|{(end_time - start_time):.1f}s]: Loss {loss:.2f}, "
                                       f"RMSEs: {self.pretty_rmses(rmses)}")
                 del loss, rmses
@@ -387,16 +394,18 @@ class Experiment:
         self.setup()
 
         self.logger.debug("Starting training the model.")
-        self.train()
 
-        self.logger.debug("Starting testing the model.")
-        self.test()
+        try:
+            self.train()
+        except KeyboardInterrupt:
+            print('Force stopped training. Evaluating on test set.')
+        finally:
+            self.logger.debug("Starting testing the model.")
+            self.test()
 
-        self.task.close()
+            self.task.close()
 
     def get_test_rmse(self):
         test_rmse_values = self.test_rmses.values()
         mean_test_rmse = sum(test_rmse_values) / len(test_rmse_values)
         return mean_test_rmse
-
-

@@ -14,8 +14,8 @@ import torch_sparse
 from torch_geometric.utils import softmax
 from torch_geometric.utils.loop import add_remaining_self_loops
 
-from model.ode.blocks.funcs.base import BaseOdeFunc
-from model.ode.utils import squareplus
+from src.model.ode.blocks.funcs.base import BaseOdeFunc
+from src.model.ode.utils import squareplus
 
 
 class ScaledDotProductOdeFunc(BaseOdeFunc):
@@ -53,6 +53,7 @@ class ScaledDotProductOdeFunc(BaseOdeFunc):
                                                                opt=opt,
                                                                edge_attr=self.edge_attr,
                                                                device=self.device)
+        self.num_nodes = opt.get('n_nodes')
 
     def apply_attention(self, x, attention, v=None):
 
@@ -75,7 +76,7 @@ class ScaledDotProductOdeFunc(BaseOdeFunc):
         attention, (values, _) = self.attention_layer(x, self.edge_index)
         ax = self.apply_attention(x, attention, values)
 
-        ax = torch.reshape(ax, [-1, 207, self.in_features])
+        ax = torch.reshape(ax, [-1, self.num_nodes, self.in_features])
 
         if self.opt['alpha_sigmoid']:
             alpha = torch.sigmoid(self.alpha_train)
