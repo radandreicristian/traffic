@@ -134,7 +134,7 @@ class SpatioTemporalEmbedding(nn.Module):
                                                       activations=[f.relu, None],
                                                       bn_decay=bn_decay,
                                                       use_bias=use_bias)
-        self.fully_connected_temporal = FullyConnected(in_features=[2, d_hidden],
+        self.fully_connected_temporal = FullyConnected(in_features=[31, d_hidden],
                                                        out_features=[d_hidden, d_hidden],
                                                        activations=[f.relu, None],
                                                        bn_decay=bn_decay,
@@ -414,7 +414,7 @@ class GraphMultiAttentionNet(nn.Module):
 
         x = self.fc_in(x_signal)
 
-        # temporal_features (batch_size, n_previous+n_future, n_nodes, 2)
+        # temporal_features (batch_size, n_previous+n_future, n_nodes, 31)
         temporal_features = torch.cat((x_temporal, y_temporal), dim=1)
         first_future_index = temporal_features.shape[1] // 2
 
