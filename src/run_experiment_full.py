@@ -5,7 +5,7 @@ import hydra
 import torch
 from omegaconf import DictConfig
 
-from experiment import Experiment
+from src.experiment import Experiment
 
 
 @hydra.main(config_path='conf',

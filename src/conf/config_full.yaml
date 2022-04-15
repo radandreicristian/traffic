@@ -5,7 +5,7 @@ project_name:
 ##################################### Data Configuration ##########################################
 
 # The name of the dataset - Either "metr_la" or "pems_bay"
-dataset: metr_la
+dataset: pems_bay
 
 # On-disk loading (like torchvision) or in-memory loading ("mem" or "disk")
 dataset_loading_location: mem
@@ -46,7 +46,7 @@ lr: 1e-3
 weight_decay: 5e-2
 
 # Early stopping patience
-early_stop_patience: 7
+early_stop_patience: 10
 
 ##################################### Model Configuration ##########################################
 
