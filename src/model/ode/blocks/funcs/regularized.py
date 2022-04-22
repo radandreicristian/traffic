@@ -20,17 +20,15 @@ class RegularizedOdeFunc(nn.Module):
     :param reg_funcs: A list of callable regularization functions.
     """
 
-    def __init__(self,
-                 ode_func: BaseOdeFunc,
-                 reg_funcs: List[Callable]) -> None:
+    def __init__(self, ode_func: BaseOdeFunc, reg_funcs: List[Callable]) -> None:
         super(RegularizedOdeFunc, self).__init__()
 
         self.ode_func = ode_func
         self.reg_funcs = reg_funcs
 
-    def forward(self,
-                t: torch.Tensor,
-                state: torch.Tensor) -> Union[torch.Tensor, Tuple[Any]]:
+    def forward(
+        self, t: torch.Tensor, state: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[Any]]:
         """
         Forwards the
 
@@ -45,7 +43,9 @@ class RegularizedOdeFunc(nn.Module):
             d_state = self.ode_func(t, x)
             if len(state) > 1:
                 dx = d_state
-                reg_states = tuple(reg_func(x, t, dx, self.ode_func) for reg_func in self.reg_funcs)
+                reg_states = tuple(
+                    reg_func(x, t, dx, self.ode_func) for reg_func in self.reg_funcs
+                )
                 return (d_state,) + reg_states
             else:
                 return d_state

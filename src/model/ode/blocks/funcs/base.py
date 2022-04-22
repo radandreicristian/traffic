@@ -24,13 +24,15 @@ class BaseOdeFunc(MessagePassing):
     :param edge_attr: Adjacency weight (sparse COO format).
     """
 
-    def __init__(self,
-                 in_features: int,
-                 out_features: int,
-                 opt: dict,
-                 edge_index: torch.Tensor,
-                 edge_attr: torch.Tensor,
-                 device) -> None:
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        opt: dict,
+        edge_index: torch.Tensor,
+        edge_attr: torch.Tensor,
+        device,
+    ) -> None:
         super(BaseOdeFunc, self).__init__()
         self.opt = opt
         self.edge_index = edge_index

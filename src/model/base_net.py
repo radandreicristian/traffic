@@ -21,45 +21,45 @@ from src.model.residual_layer import ResidualLinear
 class BaseGNN(MessagePassing, ABC):
     """An abstract base class for the graph-neural-diffusion based GNNs"""
 
-    def __init__(self,
-                 opt: dict):
+    def __init__(self, opt: dict):
         super(BaseGNN, self).__init__()
-
-        self.return_previous_losses = False
 
         self.ode_block: Optional[BaseOdeBlock] = None
         self.opt = opt
-        self.T = opt['time']
-        self.p_dropout = opt['p_dropout_model']
+        self.T = opt["time"]
+        self.p_dropout = opt["p_dropout_model"]
 
-        if opt['use_beltrami']:
-            raise ValueError("Beltrami diffusion not implemented yet")
-        else:
-            self.fc_in = nn.Linear(in_features=1,
-                                   out_features=opt['d_hidden'])
+        self.d_hidden = opt["d_hidden"]  # hidden_dim
 
-        self.d_hidden = opt['d_hidden']  # hidden_dim
+        if self.opt["use_mlp_in"]:
+            self.mlp_in = nn.ModuleList(
+                [
+                    ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout),
+                    ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout),
+                ]
+            )
 
-        if self.opt['use_mlp_in']:
-            self.mlp_in = nn.ModuleList([ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout),
-                                         ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout)])
-
-        if self.opt['use_mlp_out']:
-            self.mlp_out = nn.ModuleList([ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout),
-                                          ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout)])
+        if self.opt["use_mlp_out"]:
+            self.mlp_out = nn.ModuleList(
+                [
+                    ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout),
+                    ResidualLinear(d_hidden=self.d_hidden, p_dropout=self.p_dropout),
+                ]
+            )
 
         self.regressor = nn.Linear(self.d_hidden, 1)  # This is a regression task
 
-        if self.opt['use_batch_norm']:
+        if self.opt["use_batch_norm"]:
             self.bn_in = torch.nn.BatchNorm1d(self.d_hidden)
             # self.bn_out = torch.nn.BatchNorm2d(self.n_previous_steps)
 
         self.reg_funcs, self.reg_coeffs = create_reg_funcs(opt=self.opt)
+        self.stored_features = {}
 
     @abstractmethod
-    def forward(self,
-                x: torch.Tensor,
-                pos_embedding: torch.Tensor = None) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, pos_embedding: torch.Tensor = None
+    ) -> torch.Tensor:
         pass
 
     def get_n_func_eval(self) -> int:
@@ -69,7 +69,10 @@ class BaseGNN(MessagePassing, ABC):
         :return: The current number of function evaluations.
         :rtype: int.
         """
-        return self.ode_block.ode_func.n_func_eval + self.ode_block.reg_ode_func.ode_func.n_func_eval
+        return (
+            self.ode_block.ode_func.n_func_eval
+            + self.ode_block.reg_ode_func.ode_func.n_func_eval
+        )
 
     def reset_n_func_eval(self) -> None:
         """
@@ -81,20 +84,20 @@ class BaseGNN(MessagePassing, ABC):
         self.ode_block.ode_func.n_func_eval = 0
         self.ode_block.reg_ode_func.ode_func.n_func_eval = 0
 
-    def rearrange_batch_norm(self,
-                             tensor: torch.Tensor) -> torch.Tensor:
+    def rearrange_batch_norm(self, tensor: torch.Tensor) -> torch.Tensor:
         """
         Rearrange the tensor such that batch norm can be applied, apply it and return the result.
 
         :param tensor: A tensor of shape (batch, nodes, hid)
         :return: The batch-normalised tensor with the same shape.
         """
-        transposed_tensor = rearrange(tensor, 'batch nodes hid -> batch hid nodes')
+        transposed_tensor = rearrange(tensor, "batch nodes hid -> batch hid nodes")
         batch_norm_transposed_tensor = self.bn_in(transposed_tensor)
-        return rearrange(batch_norm_transposed_tensor, 'batch hid nodes -> batch nodes hid')
+        return rearrange(
+            batch_norm_transposed_tensor, "batch hid nodes -> batch nodes hid"
+        )
 
-    def augment_up(self,
-                   tensor: torch.Tensor) -> torch.Tensor:
+    def augment_up(self, tensor: torch.Tensor) -> torch.Tensor:
         """
         Add extra zero features to the feature tensor for ODE stability.
 

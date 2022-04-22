@@ -1,10 +1,10 @@
 __all__ = [
-    'BaseGNN',
-    'GraphDiffusionRecurrentNet',
-    'GraphMultiAttentionNet',
-    'LatentGraphDiffusionRecurrentNet',
-    'OdeNet',
-    'GraphMultiAttentionNetOde',
+    "BaseGNN",
+    "GraphDiffusionRecurrentNet",
+    "GraphMultiAttentionNet",
+    "LatentGraphDiffusionRecurrentNet",
+    "OdeNet",
+    "GraphMultiAttentionNetOde",
 ]
 
 from .base_net import BaseGNN

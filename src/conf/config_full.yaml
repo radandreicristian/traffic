@@ -51,11 +51,12 @@ early_stop_patience: 10
 ##################################### Model Configuration ##########################################
 
 # [lgdr, gdr, ode, vae, gman, gman2]
-model_type: gman2
+model_type: gatman
 
 # Size of the hidden feature vectors in the model (int)
 d_hidden: 64
 
+d_hidden_pos: 64
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
 use_mlp_in: True
 
@@ -63,10 +64,10 @@ use_mlp_in: True
 use_mlp_out: True
 
 # Dropout percent of the input (float, <1.)
-p_dropout_in: .4
+p_dropout_in: .5
 
 # Dropout rate of the model (float, <1.)
-p_dropout_model: .5
+p_dropout_model: .6
 
 # Batch normalization (bool) {batch_norm}
 use_batch_norm: True
@@ -94,6 +95,9 @@ function: transformer
 add_source: True
 
 n_blocks: 3
+
+n_blocks_enc: 1
+n_blocks_dec: 3
 
 ###################################### ODE Configuration ###########################################
 
@@ -185,7 +189,7 @@ n_features: 12
 # TODO
 
 ##################################### Beltrami Configuration ######################################
-use_beltrami: False
+use_beltrami: True
 # TODO
 
 # Random Notes:
