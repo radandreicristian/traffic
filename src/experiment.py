@@ -22,7 +22,7 @@ from src.model import (
     LatentGraphDiffusionRecurrentNet,
     OdeNet,
     GraphDiffusionRecurrentNet,
-    GraphMultiAttentionNetOde,
+    GraphMultiAttentionNetOde, EGCNet,
 )
 from src.util.constants import *
 from src.util.earlystopping import EarlyStopping
@@ -304,9 +304,10 @@ class Experiment:
             "gman": GraphMultiAttentionNet,
             "gman2": GraphMultiAttentionNetOde,
             "gatman": GATMAN,
+            "egcnet": EGCNet
         }
 
-        temporal_feature_models = ["gman", "gman2", "gatman"]
+        temporal_feature_models = ["gman", "gman2", "gatman", "egcnet"]
         model_tag = self.opt["model_type"]
         try:
             model_type = models[model_tag]

@@ -1,6 +1,10 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
 from torch import Tensor
+from torch_geometric.nn import EGConv
 
 from src.model.gman_blocks import (
     FullyConnected,
@@ -9,37 +13,28 @@ from src.model.gman_blocks import (
     SpatioTemporalEmbedding,
     TransformAttention,
 )
-import torch
-import torch.nn as nn
-import torch.nn.functional as f
-from torch_geometric.nn.conv import GATConv
 from src.model.util.knn_rewire import knn_rewire
 
 
-class GATWrapper(nn.Module):
+class EGCWrapper(nn.Module):
     def __init__(
-        self, d_hidden_feat, d_hidden_pos, n_heads, edge_index, edge_attr, k=None
+        self, d_hidden_feat, d_hidden_pos, n_heads, edge_index, k=None
     ) -> None:
-        super(GATWrapper, self).__init__()
+        super(EGCWrapper, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
 
         assert self.d_hidden % n_heads == 0, (
             "Hidden size not divisible by number of " "heads."
         )
 
-        d_head = self.d_hidden // n_heads
-
         self.n_heads = n_heads
         self.fc_in = nn.Linear(in_features=self.d_hidden, out_features=self.d_hidden)
-        self.gat_layer = GATConv(
+        self.egc_layer = EGConv(
             in_channels=self.d_hidden,
-            out_channels=d_head,
-            heads=n_heads,
-            dropout=0.5,
-            edge_dim=1,
+            out_channels=self.d_hidden,
+            num_heads=n_heads,
         )
         self.edge_index = edge_index
-        self.edge_attr = edge_attr
         self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
 
     def forward(self, x: torch.Tensor, ste):
@@ -48,18 +43,16 @@ class GATWrapper(nn.Module):
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
 
-        h = rearrange(h, "b l n d -> (b l) n d")
+        h = self.fc_in(h)
 
-        # [(n_nodes, 2*d_hidden)]
-        h = list(h)
+        h = rearrange(h, "b l n d -> (b l) n d")
 
         # (batch*seq, n_nodes, 2*d_hidden)
         h = torch.stack(
             [
-                self.gat_layer(
+                self.egc_layer(
                     g,
                     edge_index=self.edge_index,
-                    edge_attr=self.edge_attr,
                 )
                 for g in h
             ]
@@ -69,18 +62,22 @@ class GATWrapper(nn.Module):
         return f.relu(self.fc_out(h))
 
 
-class SpatioTemporalGraphAttention(nn.Module):
+class EGCSpatioTemporalBlock(nn.Module):
     def __init__(
-        self, n_heads, d_hidden, d_hidden_pos, bn_decay, edge_index, edge_attr
+        self,
+        n_heads,
+        d_hidden,
+        d_hidden_pos,
+        bn_decay,
+        edge_index,
     ):
-        super(SpatioTemporalGraphAttention, self).__init__()
+        super(EGCSpatioTemporalBlock, self).__init__()
 
-        self.spatial_attention = GATWrapper(
+        self.spatial_attention = EGCWrapper(
             d_hidden_feat=d_hidden,
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
             edge_index=edge_index,
-            edge_attr=edge_attr,
         )
         self.temporal_attention = TemporalAttention(
             d_hidden=d_hidden,
@@ -99,11 +96,11 @@ class SpatioTemporalGraphAttention(nn.Module):
         return x + h
 
 
-class GATMAN(nn.Module):
+class EGCNet(nn.Module):
     def __init__(
         self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(GATMAN, self).__init__()
+        super(EGCNet, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")
@@ -135,13 +132,12 @@ class GATMAN(nn.Module):
 
         self.encoder = nn.ModuleList(
             [
-                SpatioTemporalGraphAttention(
+                EGCSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     edge_index=self.edge_index,
-                    edge_attr=self.edge_attr,
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -151,13 +147,12 @@ class GATMAN(nn.Module):
         )
         self.decoder = nn.ModuleList(
             [
-                SpatioTemporalGraphAttention(
+                EGCSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     edge_index=self.edge_index,
-                    edge_attr=self.edge_attr,
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -208,3 +203,6 @@ class GATMAN(nn.Module):
 
         x = torch.squeeze(self.fc_out(x), 3)
         return x
+
+    def __repr__(self):
+        return self.__class__.__name__

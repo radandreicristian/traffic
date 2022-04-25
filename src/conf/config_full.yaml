@@ -29,8 +29,8 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-train_batch_size: 1
-test_batch_size: 1
+train_batch_size: 32
+test_batch_size: 32
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
@@ -50,8 +50,8 @@ early_stop_patience: 10
 
 ##################################### Model Configuration ##########################################
 
-# [lgdr, gdr, ode, vae, gman, gman2]
-model_type: gatman
+# [lgdr, gdr, ode, vae, gman, gman2, gatman, egcnet]
+model_type: gman
 
 # Size of the hidden feature vectors in the model (int)
 d_hidden: 64

@@ -5,6 +5,7 @@ __all__ = [
     "LatentGraphDiffusionRecurrentNet",
     "OdeNet",
     "GraphMultiAttentionNetOde",
+    "EGCNet"
 ]
 
 from .base_net import BaseGNN
@@ -13,3 +14,4 @@ from .gman import GraphMultiAttentionNet
 from .lgdr_net import LatentGraphDiffusionRecurrentNet
 from .ode_net import OdeNet
 from .gman_ode import GraphMultiAttentionNetOde
+from .egcnet import EGCNet
