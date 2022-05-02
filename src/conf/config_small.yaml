@@ -58,6 +58,7 @@ d_hidden: 8
 
 d_hidden_pos: 8
 
+linformer_k: 2
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
 use_mlp_in: True
 
@@ -150,7 +151,7 @@ leaky_relu_slope: .2
 attention_dropout: .3
 
 # Number of attention heads (int) {heads}
-n_heads: 8
+n_heads: 4
 
 # Attention normalization index (int, 0/1) - 0: by rows, 1: by cols
 attention_norm_idx: 0
@@ -185,6 +186,10 @@ n_future_steps: 12
 n_features: 12
 ##################################### Rewiring Configuration ######################################
 # TODO
+
+knn_rewire: False
+
+knn_rewire_k: 5
 
 ##################################### Beltrami Configuration ######################################
 use_beltrami: False

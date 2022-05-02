@@ -1,6 +1,7 @@
 import torch_geometric
 from einops import rearrange
 from torch import Tensor
+from torch_geometric.data import Data, Batch
 
 from src.model.gman_blocks import (
     FullyConnected,
@@ -50,10 +51,6 @@ class GATWrapper(nn.Module):
 
         h = rearrange(h, "b l n d -> (b l) n d")
 
-        # [(n_nodes, 2*d_hidden)]
-        h = list(h)
-
-        # (batch*seq, n_nodes, 2*d_hidden)
         h = torch.stack(
             [
                 self.gat_layer(
@@ -66,7 +63,7 @@ class GATWrapper(nn.Module):
         )
 
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return f.relu(self.fc_out(h))
+        return self.fc_out(h)
 
 
 class SpatioTemporalGraphAttention(nn.Module):
@@ -208,3 +205,6 @@ class GATMAN(nn.Module):
 
         x = torch.squeeze(self.fc_out(x), 3)
         return x
+
+    def __repr__(self):
+        return self.__class__.__name__

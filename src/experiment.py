@@ -3,7 +3,7 @@ import os.path as osp
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
-
+from clearml.logger import StdStreamPatch
 import numpy as np
 import pytorch_lightning as pl
 import torch.cuda
@@ -22,11 +22,16 @@ from src.model import (
     LatentGraphDiffusionRecurrentNet,
     OdeNet,
     GraphDiffusionRecurrentNet,
-    GraphMultiAttentionNetOde, EGCNet,
+    GraphMultiAttentionNetOde,
+    EGCNet,
+    LinearGMAN,
 )
 from src.util.constants import *
 from src.util.earlystopping import EarlyStopping
 from src.util.generate_node2vec import Node2VecEmbedder
+
+import os
+import binascii
 
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 
@@ -58,7 +63,6 @@ class Experiment:
         self.clearml_logger: Optional[Logger] = None
 
         self.logger = logging.getLogger("traffic")
-        self.logger.info("Hi")
 
         self.model_path = "best_model.pt"
 
@@ -278,6 +282,16 @@ class Experiment:
         Initializes the dataset, datamodule, experiment versioning,
         :return:
         """
+        tag = binascii.b2a_hex(os.urandom(3))
+        self.task = Task.init(
+            project_name="Graph Diffusion Traffic Forecasting",
+            task_name=f"Train Task {tag}",
+            task_type=TaskTypes.training,
+            reuse_last_task_id=False,
+            output_uri="s3://traffic-models",
+        )
+        self.clearml_logger = self.task.logger
+
         self.setup_data()
 
         self.set_model()
@@ -287,15 +301,6 @@ class Experiment:
         params = [p for p in self.model.parameters() if p.requires_grad]
         self.set_optimizer(params)
 
-        self.task = Task.init(
-            project_name="Graph Diffusion Traffic Forecasting",
-            task_name="Train Task",
-            task_type=TaskTypes.training,
-            reuse_last_task_id=False,
-        )
-
-        self.clearml_logger = self.task.logger
-
     def set_model(self) -> None:
         models = {
             "lgdr": LatentGraphDiffusionRecurrentNet,
@@ -304,10 +309,11 @@ class Experiment:
             "gman": GraphMultiAttentionNet,
             "gman2": GraphMultiAttentionNetOde,
             "gatman": GATMAN,
-            "egcnet": EGCNet
+            "egcnet": EGCNet,
+            "gman_linear": LinearGMAN,
         }
 
-        temporal_feature_models = ["gman", "gman2", "gatman", "egcnet"]
+        non_temporal_augmented_models = ["lgdr", "gdr", "ode"]
         model_tag = self.opt["model_type"]
         try:
             model_type = models[model_tag]
@@ -315,7 +321,7 @@ class Experiment:
             raise
         self.model = model_type(self.opt, self.dataset, self.device).to(self.device)
         self.use_temporal_features = (
-            True if model_tag in temporal_feature_models else False
+            False if model_tag in non_temporal_augmented_models else True
         )
 
     def set_optimizer(
@@ -416,13 +422,15 @@ class Experiment:
                 self.best_model = self.model
                 self.best_val_rmse = mean_valid_rmse
                 self.best_model_info = {"Epoch": epoch}
+                torch.save(self.best_model.state_dict(), self.model_path)
+                self.task.update_output_model(self.model_path)
             early_stopping(valid_loss, self.model)
             if early_stopping.early_stop:
                 self.logger.info(
                     f"Early stopping triggered after epoch {epoch}. No valid loss improvement in the "
                     f"last {early_stopping.patience} epochs."
                 )
-                # self.task.update_output_model(self.model_path, "Model")
+                self.task.update_output_model(self.model_path)
                 break
         self.logger.info(
             f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_rmse}"
@@ -430,6 +438,7 @@ class Experiment:
         if not early_stopping.early_stop:
             torch.save(self.best_model.state_dict(), self.model_path)
             # self.task.update_output_model(self.model_path, "Model")
+        self.task.update_output_model(self.model_path)
 
     def test(self):
         test_rmses = []
@@ -444,6 +453,9 @@ class Experiment:
 
     def run(self):
         self.logger.info("Setting up the experiment.")
+
+        StdStreamPatch.remove_std_logger()
+
         self.setup()
 
         self.logger.info("Starting training the model.")
