@@ -119,9 +119,11 @@ class GATMAN(nn.Module):
         self.rewire = opt.get("knn_rewire")
         if self.rewire:
             k = opt.get("knn_rewire_k")
-            self.edge_index, self.edge_attr = knn_rewire(
-                self.edge_index, k, self.edge_attr
+            self.edge_index, self.edge_attr = map(
+                lambda x: x.to(self.device),
+                knn_rewire(self.edge_index, k, self.edge_attr),
             )
+
         # Todo - This will require grad later)
         self.positional_embeddings = nn.Parameter(
             data=opt.get("positional_embeddings"), requires_grad=False
