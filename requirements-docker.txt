@@ -1,6 +1,6 @@
 ogb
 pykeops
-clearml==1.3.0
+clearml
 einops==0.4.0
 hydra-core==1.1.1
 numpy==1.21.4
@@ -9,3 +9,4 @@ pytorch_lightning==1.5.9
 boto3
 googledrivedownloader
 hydra-optuna-sweeper
+linformer
