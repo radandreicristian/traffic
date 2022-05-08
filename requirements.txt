@@ -10,3 +10,4 @@ torch_geometric.egg==info
 torch_scatter==2.0.9
 torch_sparse==0.6.12
 torchdiffeq==0.2.2
+linformer

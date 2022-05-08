@@ -7,7 +7,7 @@ import torch.nn.functional as f
 import torch_geometric.data
 from torch import Tensor
 
-from src.model.gman_blocks import (
+from src.model.gman.gman_blocks import (
     FullyConnected,
     SpatioTemporalEmbedding,
     SpatioTemporalAttention,

@@ -1,40 +1,45 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
 from torch import Tensor
-from torch_geometric.nn import EGConv
 
-from src.model.gman_blocks import (
+from src.model.gman.gman_blocks import (
     FullyConnected,
     TemporalAttention,
     GatedFusion,
     SpatioTemporalEmbedding,
     TransformAttention,
 )
-from src.model.util.knn_rewire import knn_rewire
+import torch
+import torch.nn as nn
+import torch.nn.functional as f
+from torch_geometric.nn.conv import GATConv
+from src.model.gman.util.knn_rewire import knn_rewire
 
 
-class EGCWrapper(nn.Module):
+class GATWrapper(nn.Module):
     def __init__(
-        self, d_hidden_feat, d_hidden_pos, n_heads, edge_index, k=None
+        self, d_hidden_feat, d_hidden_pos, n_heads, edge_index, edge_attr, k=None
     ) -> None:
-        super(EGCWrapper, self).__init__()
+        super(GATWrapper, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
 
         assert self.d_hidden % n_heads == 0, (
             "Hidden size not divisible by number of " "heads."
         )
 
+        d_head = self.d_hidden // n_heads
+
         self.n_heads = n_heads
         self.fc_in = nn.Linear(in_features=self.d_hidden, out_features=self.d_hidden)
-        self.egc_layer = EGConv(
+        self.gat_layer = GATConv(
             in_channels=self.d_hidden,
-            out_channels=self.d_hidden,
-            num_heads=n_heads,
+            out_channels=d_head,
+            heads=n_heads,
+            dropout=0.5,
+            edge_dim=1,
         )
         self.edge_index = edge_index
+        self.edge_attr = edge_attr
         self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
 
     def forward(self, x: torch.Tensor, ste):
@@ -43,41 +48,35 @@ class EGCWrapper(nn.Module):
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
 
-        h = self.fc_in(h)
-
         h = rearrange(h, "b l n d -> (b l) n d")
 
-        # (batch*seq, n_nodes, 2*d_hidden)
         h = torch.stack(
             [
-                self.egc_layer(
+                self.gat_layer(
                     g,
                     edge_index=self.edge_index,
+                    edge_attr=self.edge_attr,
                 )
                 for g in h
             ]
         )
 
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return f.relu(self.fc_out(h))
+        return self.fc_out(h)
 
 
-class EGCSpatioTemporalBlock(nn.Module):
+class SpatioTemporalGraphAttention(nn.Module):
     def __init__(
-        self,
-        n_heads,
-        d_hidden,
-        d_hidden_pos,
-        bn_decay,
-        edge_index,
+        self, n_heads, d_hidden, d_hidden_pos, bn_decay, edge_index, edge_attr
     ):
-        super(EGCSpatioTemporalBlock, self).__init__()
+        super(SpatioTemporalGraphAttention, self).__init__()
 
-        self.spatial_attention = EGCWrapper(
+        self.spatial_attention = GATWrapper(
             d_hidden_feat=d_hidden,
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
             edge_index=edge_index,
+            edge_attr=edge_attr,
         )
         self.temporal_attention = TemporalAttention(
             d_hidden=d_hidden,
@@ -96,11 +95,11 @@ class EGCSpatioTemporalBlock(nn.Module):
         return x + h
 
 
-class EGCNet(nn.Module):
+class GATMAN(nn.Module):
     def __init__(
         self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(EGCNet, self).__init__()
+        super(GATMAN, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")
@@ -119,9 +118,11 @@ class EGCNet(nn.Module):
         self.rewire = opt.get("knn_rewire")
         if self.rewire:
             k = opt.get("knn_rewire_k")
-            self.edge_index, self.edge_attr = knn_rewire(
-                self.edge_index, k, self.edge_attr
+            self.edge_index, self.edge_attr = map(
+                lambda x: x.to(self.device),
+                knn_rewire(self.edge_index, k, self.edge_attr),
             )
+
         # Todo - This will require grad later)
         self.positional_embeddings = nn.Parameter(
             data=opt.get("positional_embeddings"), requires_grad=False
@@ -132,12 +133,13 @@ class EGCNet(nn.Module):
 
         self.encoder = nn.ModuleList(
             [
-                EGCSpatioTemporalBlock(
+                SpatioTemporalGraphAttention(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     edge_index=self.edge_index,
+                    edge_attr=self.edge_attr,
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -147,12 +149,13 @@ class EGCNet(nn.Module):
         )
         self.decoder = nn.ModuleList(
             [
-                EGCSpatioTemporalBlock(
+                SpatioTemporalGraphAttention(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     edge_index=self.edge_index,
+                    edge_attr=self.edge_attr,
                 )
                 for _ in range(self.n_blocks)
             ]

@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInMemory
 
-from src.model.gatman import GATMAN
+from src.model.gman.gatman import GATMAN
 from src.util.utils import get_number_of_nodes
 from src.data.traffic_datamodule import TrafficDataModule
 from src.model import (
@@ -83,7 +83,9 @@ class Experiment:
         """
         return " ".join([f"{k} min.: {v:.1f} " for k, v in rmses.items()])
 
-    def log_rmses(self, title: str, values: Dict[int, float], iteration: int) -> None:
+    def log_metric(
+        self, metric: str, stage: str, values: Dict[int, float], iteration: int
+    ) -> None:
         """
         Logs a dictionary of RMSEs to ClearML.
 
@@ -92,8 +94,9 @@ class Experiment:
         :param iteration:
         :return:
         """
+        title = f"{stage} {metric}s"
         for minutes, value in values.items():
-            series = f"RMSE @ {minutes} min."
+            series = f"{metric} @ {minutes} min."
             self.clearml_logger.report_scalar(
                 title=title, value=value, series=series, iteration=iteration
             )
@@ -112,18 +115,18 @@ class Experiment:
         self.logger.info(f"Total trainable params: {total_params}")
 
     @staticmethod
-    def mean_rmses(rmses: List[Dict]) -> Dict:
+    def mean_metric(values: List[Dict]) -> Dict:
         """
-        Computes the mean of RMSEs over a batch.
+        Computes the mean of a metric over a batch.
 
-        :param rmses: A list of dictionaries containing RMSEs for given time steps over a batch.
+        :param values: A list of dictionaries containing RMSEs for given time steps over a batch.
         :return: A dictionary containing mean RMSEs for given time steps over a batch.
         """
-        keys = rmses[0].keys()
-        mean_rmses = dict(zip(keys, [0] * len(keys)))
+        keys = values[0].keys()
+        mean_metric_value = dict(zip(keys, [0] * len(keys)))
         for key in keys:
-            mean_rmses[key] = np.mean([item[key] for item in rmses])
-        return mean_rmses
+            mean_metric_value[key] = np.mean([item[key] for item in values])
+        return mean_metric_value
 
     def common_step(
         self, batch: List[torch.Tensor], pos_encoding=None, use_best_model: bool = False
@@ -162,8 +165,21 @@ class Experiment:
             for k, v in indices.items()
         }
 
+        maes = {
+            k: torch.mean((y_signal[:, v, :] - y_hat.detach()[:, v, :])).item()
+            for k, v in indices.items()
+        }
+
+        mapes = {
+            k: torch.mean(
+                (y_signal[:, v, :] - y_hat.detach()[:, v, :]) / y_signal[:, v, :]
+            ).item()
+            for k, v in indices.items()
+        }
+
         del x_signal, y_signal, y_hat, x_temporal, y_temporal
-        return loss, rmses
+        metrics = {"rmses": rmses, "maes": maes, "mapes": mapes}
+        return loss, metrics
 
     def train_step(
         self, batch: List[torch.Tensor], pos_encoding=None
@@ -178,7 +194,7 @@ class Experiment:
         self.model.train()
         self.optimizer.zero_grad()
 
-        loss, rmses = self.common_step(batch, pos_encoding)
+        loss, metrics = self.common_step(batch, pos_encoding)
 
         if hasattr(self.model, "ode_block"):
             if self.model.ode_block.n_reg > 0:
@@ -199,7 +215,7 @@ class Experiment:
 
         del batch, loss
         torch.cuda.empty_cache()
-        return loss_value, rmses
+        return loss_value, metrics
 
     @torch.no_grad()
     def eval_step(
@@ -217,9 +233,9 @@ class Experiment:
             self.best_model.eval()
         else:
             self.model.eval()
-        loss, rmses = self.common_step(batch, pos_encoding, use_best_model)
+        loss, metrics = self.common_step(batch, pos_encoding, use_best_model)
 
-        return loss.item(), rmses
+        return loss.item(), metrics
 
     def setup_data(self):
         datasets = {
@@ -368,54 +384,70 @@ class Experiment:
         )
         for epoch in range(self.opt["n_epochs"]):
             train_rmses = []
+            train_maes = []
+            train_mapes = []
             train_losses = []
             for idx, batch in enumerate(self.train_dataloader):
                 start_time = time.time()
                 batch = [e.to(self.device) for e in batch]
-                loss, rmses = self.train_step(batch=batch)
+                loss, metrics = self.train_step(batch=batch)
 
                 train_losses.append(loss)
-                train_rmses.append(rmses)
+                train_rmses.append(metrics["rmses"])
+                train_maes.append(metrics["maes"])
+                train_mapes.append(metrics["mapes"])
+
                 end_time = time.time()
 
                 if idx % self.batch_log_frequency == 0:
                     self.logger.info(
-                        f"[Train|Ep.{epoch}|B.{idx}|{(end_time - start_time):.1f}s]: Loss {loss:.2f}, "
-                        f"RMSEs: {self.pretty_rmses(rmses)}"
+                        f"[Train|Ep.{epoch}|B.{idx}|{(end_time - start_time):.1f}s]: "
+                        f"Loss {loss:.2f}"
                     )
-                del loss, rmses
+                del loss, metrics
 
             train_loss = float(np.mean(train_losses))
-            train_rmses = self.mean_rmses(train_rmses)
+            train_rmses = self.mean_metric(train_rmses)
+            train_maes = self.mean_metric(train_maes)
+            train_mapes = self.mean_metric(train_mapes)
 
             self.clearml_logger.report_scalar(
                 "Losses", value=train_loss, series="Train Loss", iteration=epoch
             )
-            self.log_rmses("Train RMSEs", values=train_rmses, iteration=epoch)
+            self.log_metric("RMSE", "Train", values=train_rmses, iteration=epoch)
+            self.log_metric("MAE", "Train", values=train_maes, iteration=epoch)
+            self.log_metric("MAPE", "Train", values=train_mapes, iteration=epoch)
 
             self.logger.info(
-                f"[Train|Ep.{epoch}|Overall]: Loss {train_loss}, RMSEs: {self.pretty_rmses(train_rmses)}"
+                f"[Train|Ep.{epoch}|Overall]: Loss {train_loss:.2f}."
             )
 
             valid_rmses = []
+            valid_maes = []
+            valid_mapes = []
             valid_losses = []
             for idx, batch in enumerate(self.valid_dataloader):
                 batch = [e.to(self.device) for e in batch]
-                loss, rmses = self.eval_step(batch=batch)
+                loss, metrics = self.eval_step(batch=batch)
 
                 valid_losses.append(loss)
-                valid_rmses.append(rmses)
+                valid_rmses.append(metrics["rmses"])
+                valid_maes.append(metrics["maes"])
+                valid_mapes.append(metrics["mapes"])
 
             valid_loss = float(np.mean(valid_losses))
-            valid_rmses = self.mean_rmses(valid_rmses)
+            valid_rmses = self.mean_metric(valid_rmses)
+            valid_maes = self.mean_metric(valid_maes)
+            valid_mapes = self.mean_metric(valid_mapes)
 
             self.clearml_logger.report_scalar(
                 "Losses", value=valid_loss, series="Validation Loss", iteration=epoch
             )
-            self.log_rmses("Validation RMSEs", values=valid_rmses, iteration=epoch)
-            self.logger.info(
-                f"[Valid|Ep.{epoch}|Overall]: Loss {valid_loss}, RMSEs {self.pretty_rmses(valid_rmses)}"
-            )
+            self.log_metric("RMSE", "Validation", values=valid_rmses, iteration=epoch)
+            self.log_metric("MAE", "Validation", values=valid_maes, iteration=epoch)
+            self.log_metric("MAPE", "Validation", values=valid_mapes, iteration=epoch)
+
+            self.logger.info(f"[Valid|Ep.{epoch}|Overall]: Loss {valid_loss:.2f}.")
 
             mean_valid_rmse = np.mean(list(valid_rmses.values()))
             if mean_valid_rmse < self.best_val_rmse:
@@ -424,6 +456,7 @@ class Experiment:
                 self.best_model_info = {"Epoch": epoch}
                 torch.save(self.best_model.state_dict(), self.model_path)
                 self.task.update_output_model(self.model_path)
+
             early_stopping(valid_loss, self.model)
             if early_stopping.early_stop:
                 self.logger.info(
@@ -442,14 +475,26 @@ class Experiment:
 
     def test(self):
         test_rmses = []
+        test_maes = []
+        test_mapes = []
         for idx, batch in enumerate(self.test_dataloader):
             batch = [e.to(self.device) for e in batch]
-            _, rmses = self.eval_step(batch=batch, use_best_model=True)
-            test_rmses.append(rmses)
+            _, metrics = self.eval_step(batch=batch, use_best_model=True)
+            test_rmses.append(metrics["rmses"])
+            test_maes.append(metrics["maes"])
+            test_mapes.append(metrics["maes"])
 
-        self.test_rmses = self.mean_rmses(test_rmses)
-        self.log_rmses("Test RMSEs", values=self.test_rmses, iteration=1)
-        self.logger.info(f"[Test]: RMSEs {self.pretty_rmses(self.test_rmses)}")
+        test_rmses = self.mean_metric(test_rmses)
+        test_maes = self.mean_metric(test_maes)
+        test_mapes = self.mean_metric(test_mapes)
+
+        self.log_metric("RMSE", "Test", values=test_rmses, iteration=1)
+        self.log_metric("MAE", "Test", values=test_maes, iteration=1)
+        self.log_metric("MAPE", "Test", values=test_mapes, iteration=1)
+        self.logger.info("Evaluating on test data complete.")
+
+        # this is for optuna
+        self.test_rmses = test_rmses
 
     def run(self):
         self.logger.info("Setting up the experiment.")

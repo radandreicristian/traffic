@@ -3,28 +3,24 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
-from linformer import LinformerSelfAttention
 from torch import Tensor
+from torch_geometric.nn import EGConv
 
-from src.model.gman_blocks import (
+from src.model.gman.gman_blocks import (
     FullyConnected,
     TemporalAttention,
     GatedFusion,
     SpatioTemporalEmbedding,
     TransformAttention,
 )
+from src.model.gman.util.knn_rewire import knn_rewire
 
 
-class LinearSpatialAttention(nn.Module):
+class EGCWrapper(nn.Module):
     def __init__(
-        self,
-        d_hidden_feat,
-        d_hidden_pos,
-        n_heads,
-        n_nodes,
-        k,
+        self, d_hidden_feat, d_hidden_pos, n_heads, edge_index, k=None
     ) -> None:
-        super(LinearSpatialAttention, self).__init__()
+        super(EGCWrapper, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
 
         assert self.d_hidden % n_heads == 0, (
@@ -32,41 +28,56 @@ class LinearSpatialAttention(nn.Module):
         )
 
         self.n_heads = n_heads
-        self.n_nodes = n_nodes
-        self.linear_self_attention = LinformerSelfAttention(
-            dim=self.d_hidden, seq_len=self.n_nodes, heads=self.n_heads, k=k
+        self.fc_in = nn.Linear(in_features=self.d_hidden, out_features=self.d_hidden)
+        self.egc_layer = EGConv(
+            in_channels=self.d_hidden,
+            out_channels=self.d_hidden,
+            num_heads=n_heads,
         )
-
+        self.edge_index = edge_index
         self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
 
     def forward(self, x: torch.Tensor, ste):
         b, l, n, d = x.shape
+
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
+
+        h = self.fc_in(h)
+
         h = rearrange(h, "b l n d -> (b l) n d")
-        h = self.linear_self_attention(h)
+
+        # (batch*seq, n_nodes, 2*d_hidden)
+        h = torch.stack(
+            [
+                self.egc_layer(
+                    g,
+                    edge_index=self.edge_index,
+                )
+                for g in h
+            ]
+        )
+
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
         return f.relu(self.fc_out(h))
 
 
-class LinearSpatioTemporalBlock(nn.Module):
+class EGCSpatioTemporalBlock(nn.Module):
     def __init__(
         self,
         n_heads,
         d_hidden,
         d_hidden_pos,
         bn_decay,
-        n_nodes,
-        k,
+        edge_index,
     ):
-        super(LinearSpatioTemporalBlock, self).__init__()
+        super(EGCSpatioTemporalBlock, self).__init__()
 
-        self.spatial_attention = LinearSpatialAttention(
+        self.spatial_attention = EGCWrapper(
             d_hidden_feat=d_hidden,
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
-            n_nodes=n_nodes,
-            k=k,
+            edge_index=edge_index,
         )
         self.temporal_attention = TemporalAttention(
             d_hidden=d_hidden,
@@ -85,11 +96,11 @@ class LinearSpatioTemporalBlock(nn.Module):
         return x + h
 
 
-class LinearGMAN(nn.Module):
+class EGCNet(nn.Module):
     def __init__(
         self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(LinearGMAN, self).__init__()
+        super(EGCNet, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")
@@ -100,8 +111,18 @@ class LinearGMAN(nn.Module):
         self.n_previous = opt.get("n_previous_steps")
         self.n_future = opt.get("n_future_steps")
         self.n_blocks = opt.get("n_blocks")
-        self.n_nodes = opt.get("n_nodes")
 
+        self.edge_index, self.edge_attr = map(
+            lambda x: x.to(self.device), dataset.get_adjacency_matrix()
+        )
+
+        self.rewire = opt.get("knn_rewire")
+        if self.rewire:
+            k = opt.get("knn_rewire_k")
+            self.edge_index, self.edge_attr = knn_rewire(
+                self.edge_index, k, self.edge_attr
+            )
+        # Todo - This will require grad later)
         self.positional_embeddings = nn.Parameter(
             data=opt.get("positional_embeddings"), requires_grad=False
         )
@@ -109,16 +130,14 @@ class LinearGMAN(nn.Module):
             d_hidden=self.d_hidden_pos, bn_decay=self.bn_decay
         )
 
-        self.linformer_k = opt.get("linformer_k")
         self.encoder = nn.ModuleList(
             [
-                LinearSpatioTemporalBlock(
+                EGCSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
-                    n_nodes=self.n_nodes,
-                    k=self.linformer_k,
+                    edge_index=self.edge_index,
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -128,13 +147,12 @@ class LinearGMAN(nn.Module):
         )
         self.decoder = nn.ModuleList(
             [
-                LinearSpatioTemporalBlock(
+                EGCSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
-                    n_nodes=self.n_nodes,
-                    k=self.linformer_k,
+                    edge_index=self.edge_index,
                 )
                 for _ in range(self.n_blocks)
             ]

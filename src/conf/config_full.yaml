@@ -14,7 +14,7 @@ self_loop_weight: 1.
 
 valid_percentage: .1
 
-test_percentage: .3
+test_percentage: .2
 
 # There's around 32K points - ~20k train, ~6k valid, ~6k test
 sample_dataset: False
