@@ -34,7 +34,8 @@ class LinearSpatialAttention(nn.Module):
         self.n_heads = n_heads
         self.n_nodes = n_nodes
         self.linear_self_attention = LinformerSelfAttention(
-            dim=self.d_hidden, seq_len=self.n_nodes, heads=self.n_heads, k=k
+            dim=self.d_hidden, seq_len=self.n_nodes, heads=self.n_heads, k=k,
+            one_kv_head=True
         )
 
         self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
