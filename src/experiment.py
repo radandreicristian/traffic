@@ -24,7 +24,7 @@ from src.model import (
     GraphDiffusionRecurrentNet,
     GraphMultiAttentionNetOde,
     EGCNet,
-    LinearGMAN,
+    LinearGMAN, EfficientGMAN,
 )
 from src.util.constants import *
 from src.util.earlystopping import EarlyStopping
@@ -169,7 +169,6 @@ class Experiment:
             k: torch.mean((y_signal[:, v, :] - y_hat.detach()[:, v, :])).item()
             for k, v in indices.items()
         }
-
 
         mapes = {
             k: torch.mean(
@@ -328,6 +327,7 @@ class Experiment:
             "gatman": GATMAN,
             "egcnet": EGCNet,
             "gman_linear": LinearGMAN,
+            "gman_efficient": EfficientGMAN
         }
 
         non_temporal_augmented_models = ["lgdr", "gdr", "ode"]

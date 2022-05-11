@@ -47,6 +47,10 @@ class EfficientSelfAttention(nn.Module):
         context_vectors = k.transpose(-1, -2) @ v
         attention = q @ context_vectors
 
+        attention = rearrange(attention, "b h n d -> b n (h d)")
+
+        return self.to_out(attention)
+
 
 class LinearSpatialAttention(nn.Module):
     def __init__(
@@ -118,11 +122,11 @@ class LinearSpatioTemporalBlock(nn.Module):
         return x + h
 
 
-class LinearGMAN(nn.Module):
+class EfficientGMAN(nn.Module):
     def __init__(
         self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(LinearGMAN, self).__init__()
+        super(EfficientGMAN, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")

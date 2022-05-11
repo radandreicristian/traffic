@@ -7,6 +7,7 @@ __all__ = [
     "EGCNet",
     "LinearGMAN",
     "BaseGNN",
+    "EfficientGMAN"
 ]
 
 from .base_net import BaseGNN
@@ -18,3 +19,4 @@ from .gman.gman_linformer import LinearGMAN
 from .gman.gman import GraphMultiAttentionNet
 from .gman.gman_ode import GraphMultiAttentionNetOde
 from .gman.egcnet import EGCNet
+from .gman.gman_efficient import EfficientGMAN
