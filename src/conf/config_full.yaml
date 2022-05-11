@@ -61,7 +61,7 @@ use_mlp_in: True
 use_mlp_out: True
 
 # Dropout rate of the model (float, <1.)
-p_dropout_model: .5
+p_dropout_model: .3
 
 # Number of attention heads (int) {heads}
 n_heads: 8

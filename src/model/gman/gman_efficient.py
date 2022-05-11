@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
-from linformer import LinformerSelfAttention
 from torch import Tensor
 
 from src.model.gman.gman_blocks import (
@@ -59,7 +58,7 @@ class LinearSpatialAttention(nn.Module):
         d_hidden_pos,
         n_heads,
         n_nodes,
-        k,
+        p_dropout,
     ) -> None:
         super(LinearSpatialAttention, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
@@ -70,8 +69,8 @@ class LinearSpatialAttention(nn.Module):
 
         self.n_heads = n_heads
         self.n_nodes = n_nodes
-        self.linear_self_attention = LinformerSelfAttention(
-            dim=self.d_hidden, seq_len=self.n_nodes, heads=self.n_heads, k=k
+        self.linear_self_attention = EfficientSelfAttention(
+            d_hidden=self.d_hidden, n_heads=self.n_heads, p_dropout=p_dropout
         )
 
         self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
@@ -94,7 +93,7 @@ class LinearSpatioTemporalBlock(nn.Module):
         d_hidden_pos,
         bn_decay,
         n_nodes,
-        k,
+        p_dropout,
     ):
         super(LinearSpatioTemporalBlock, self).__init__()
 
@@ -103,7 +102,7 @@ class LinearSpatioTemporalBlock(nn.Module):
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
             n_nodes=n_nodes,
-            k=k,
+            p_dropout=p_dropout,
         )
         self.temporal_attention = TemporalAttention(
             d_hidden=d_hidden,
@@ -146,7 +145,7 @@ class EfficientGMAN(nn.Module):
             d_hidden=self.d_hidden_pos, bn_decay=self.bn_decay
         )
 
-        self.linformer_k = opt.get("linformer_k")
+        self.p_dropout = opt.get("p_dropout_model")
         self.encoder = nn.ModuleList(
             [
                 LinearSpatioTemporalBlock(
@@ -155,7 +154,7 @@ class EfficientGMAN(nn.Module):
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     n_nodes=self.n_nodes,
-                    k=self.linformer_k,
+                    p_dropout=self.p_dropout,
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -171,7 +170,7 @@ class EfficientGMAN(nn.Module):
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     n_nodes=self.n_nodes,
-                    k=self.linformer_k,
+                    p_dropout=self.p_dropout,
                 )
                 for _ in range(self.n_blocks)
             ]
