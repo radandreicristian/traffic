@@ -33,6 +33,8 @@ class FavorPlusAttention(nn.Module):
         self.linear_self_attention = SelfAttention(
             dim=self.d_hidden,
             heads=self.n_heads,
+            dim_head=self.d_hidden // n_heads,
+            local_window_size=self.d_hidden,
             causal=False
         )
 
