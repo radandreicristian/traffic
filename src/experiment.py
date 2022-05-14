@@ -24,7 +24,9 @@ from src.model import (
     GraphDiffusionRecurrentNet,
     GraphMultiAttentionNetOde,
     EGCNet,
-    LinearGMAN, EfficientGMAN,
+    LinearGMAN,
+    EfficientGMAN,
+    FavorPlusGMAN,
 )
 from src.util.constants import *
 from src.util.earlystopping import EarlyStopping
@@ -166,14 +168,14 @@ class Experiment:
         }
 
         maes = {
-            k: torch.mean((y_signal[:, v, :] - y_hat.detach()[:, v, :])).item()
+            k: torch.mean(torch.abs(y_signal[:, v, :] - y_hat.detach()[:, v, :])).item()
             for k, v in indices.items()
         }
 
         mapes = {
             k: torch.mean(
-                (y_signal[:, v, :] - y_hat.detach()[:, v, :]) / y_signal[:, v, :]
-            ).item()
+                torch.abs(y_signal[:, v, :] - y_hat.detach()[:, v, :])
+                / y_signal[:, v, :] + 1e-3).item()
             for k, v in indices.items()
         }
 
@@ -327,7 +329,8 @@ class Experiment:
             "gatman": GATMAN,
             "egcnet": EGCNet,
             "gman_linear": LinearGMAN,
-            "gman_efficient": EfficientGMAN
+            "gman_efficient": EfficientGMAN,
+            "gman_favor": FavorPlusGMAN
         }
 
         non_temporal_augmented_models = ["lgdr", "gdr", "ode"]
@@ -419,9 +422,7 @@ class Experiment:
             self.log_metric("MAE", "Train", values=train_maes, iteration=epoch)
             self.log_metric("MAPE", "Train", values=train_mapes, iteration=epoch)
 
-            self.logger.info(
-                f"[Train|Ep.{epoch}|Overall]: Loss {train_loss:.2f}."
-            )
+            self.logger.info(f"[Train|Ep.{epoch}|Overall]: Loss {train_loss:.2f}.")
 
             valid_rmses = []
             valid_maes = []

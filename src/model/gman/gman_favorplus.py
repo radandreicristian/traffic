@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
-from linformer import LinformerSelfAttention
+from performer_pytorch import SelfAttention
 from torch import Tensor
 
 from src.model.gman.gman_blocks import (
@@ -15,16 +15,14 @@ from src.model.gman.gman_blocks import (
 )
 
 
-class LinearSpatialAttention(nn.Module):
+class FavorPlusAttention(nn.Module):
     def __init__(
         self,
         d_hidden_feat,
         d_hidden_pos,
         n_heads,
-        n_nodes,
-        k,
     ) -> None:
-        super(LinearSpatialAttention, self).__init__()
+        super(FavorPlusAttention, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
 
         assert self.d_hidden % n_heads == 0, (
@@ -32,13 +30,10 @@ class LinearSpatialAttention(nn.Module):
         )
 
         self.n_heads = n_heads
-        self.n_nodes = n_nodes
-        self.linear_self_attention = LinformerSelfAttention(
+        self.linear_self_attention = SelfAttention(
             dim=self.d_hidden,
-            seq_len=self.n_nodes,
             heads=self.n_heads,
-            k=k,
-            one_kv_head=True,
+            causal=False
         )
 
         self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
@@ -53,24 +48,20 @@ class LinearSpatialAttention(nn.Module):
         return f.relu(self.fc_out(h))
 
 
-class LinearSpatioTemporalBlock(nn.Module):
+class FavorPlusSpatioTemporalBlock(nn.Module):
     def __init__(
         self,
         n_heads,
         d_hidden,
         d_hidden_pos,
         bn_decay,
-        n_nodes,
-        k,
     ):
-        super(LinearSpatioTemporalBlock, self).__init__()
+        super(FavorPlusSpatioTemporalBlock, self).__init__()
 
-        self.spatial_attention = LinearSpatialAttention(
+        self.spatial_attention = FavorPlusAttention(
             d_hidden_feat=d_hidden,
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
-            n_nodes=n_nodes,
-            k=k,
         )
         self.temporal_attention = TemporalAttention(
             d_hidden=d_hidden,
@@ -89,11 +80,11 @@ class LinearSpatioTemporalBlock(nn.Module):
         return x + h
 
 
-class LinearGMAN(nn.Module):
+class FavorPlusGMAN(nn.Module):
     def __init__(
         self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(LinearGMAN, self).__init__()
+        super(FavorPlusGMAN, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")
@@ -116,13 +107,11 @@ class LinearGMAN(nn.Module):
         self.linformer_k = opt.get("linformer_k")
         self.encoder = nn.ModuleList(
             [
-                LinearSpatioTemporalBlock(
+                FavorPlusSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
-                    n_nodes=self.n_nodes,
-                    k=self.linformer_k,
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -132,13 +121,11 @@ class LinearGMAN(nn.Module):
         )
         self.decoder = nn.ModuleList(
             [
-                LinearSpatioTemporalBlock(
+                FavorPlusSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
-                    n_nodes=self.n_nodes,
-                    k=self.linformer_k,
                 )
                 for _ in range(self.n_blocks)
             ]
