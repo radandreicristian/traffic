@@ -1,7 +1,6 @@
 ################################## Experiment Configuration #######################################
 batch_log_frequency: 100
 
-project_name:
 ##################################### Data Configuration ##########################################
 
 # The name of the dataset - Either "metr_la" or "pems_bay"
@@ -10,16 +9,12 @@ dataset: pems_bay
 # On-disk loading (like torchvision) or in-memory loading ("mem" or "disk")
 dataset_loading_location: mem
 
-# Random walk (rw) or symmetric gcn norm (gcn)
-# Todo - Read more on this
-data_norm: rw
-
 # Weights of self-loops (for the weighted adjacency matrix)
 self_loop_weight: 1.
 
 valid_percentage: .1
 
-test_percentage: .3
+test_percentage: .2
 
 # There's around 32K points - ~20k train, ~6k valid, ~6k test
 sample_dataset: False
@@ -29,8 +24,8 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-train_batch_size: 1
-test_batch_size: 1
+train_batch_size: 32
+test_batch_size: 32
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
@@ -50,26 +45,44 @@ early_stop_patience: 10
 
 ##################################### Model Configuration ##########################################
 
-# [lgdr, gdr, ode, vae, gman, gman2]
-model_type: gman2
+# [lgdr, gdr, ode, vae, gman, gman2, gatman, egcnet]
+model_type: gman
 
 # Size of the hidden feature vectors in the model (int)
 d_hidden: 64
 
+d_hidden_pos: 64
+
+linformer_k: 16
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
 use_mlp_in: True
 
 # Adds an extra fully-connected layer at the end of the decoder (bool)
 use_mlp_out: True
 
-# Dropout percent of the input (float, <1.)
-p_dropout_in: .4
-
 # Dropout rate of the model (float, <1.)
-p_dropout_model: .5
+p_dropout_model: .3
+
+# Number of attention heads (int) {heads}
+n_heads: 8
+
+n_blocks: 3
+
+n_blocks_enc: 1
+
+n_blocks_dec: 3
+
+load_positional_embeddings: True
+
+knn_rewire: False
+
+knn_rewire_k: 5
 
 # Batch normalization (bool) {batch_norm}
 use_batch_norm: True
+
+# Dropout percent of the input (float, <1.)
+p_dropout_in: .5
 
 # The factor of matrix A - Used only in C(ontinuous)GNN  src/CGNN.py (float <= 1.)
 # Todo - Read more on this
@@ -93,7 +106,6 @@ function: transformer
 # TODO add source? (bool)
 add_source: True
 
-n_blocks: 3
 
 ###################################### ODE Configuration ###########################################
 
@@ -147,8 +159,6 @@ leaky_relu_slope: .2
 # Dropout of attention weights
 attention_dropout: .3
 
-# Number of attention heads (int) {heads}
-n_heads: 8
 
 # Attention normalization index (int, 0/1) - 0: by rows, 1: by cols
 attention_norm_idx: 0
@@ -185,14 +195,13 @@ n_features: 12
 # TODO
 
 ##################################### Beltrami Configuration ######################################
-use_beltrami: False
+use_beltrami: True
 # TODO
 
 # Random Notes:
 # Attention - changes through the diffusion process
 # Rewiring - Happens at the start of the epoch based on features at t=0
 
-load_positional_embeddings: True
 ################################### Hyperparameter Optimization ###################################
 
 defaults:

@@ -5,8 +5,8 @@ from src.model.ode.blocks.funcs.scaled_dot_attention import ScaledDotProductOdeF
 
 
 def get_ode_function(opt: dict) -> Type[BaseOdeFunc]:
-    function = opt.get('function', "")
-    if function == 'transformer':
+    function = opt.get("function", "")
+    if function == "transformer":
         block = ScaledDotProductOdeFunc
     else:
         raise ValueError(f"Block type {function} not defined.")

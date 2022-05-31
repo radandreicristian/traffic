@@ -18,15 +18,17 @@ from src.model.ode.blocks.funcs.regularized import RegularizedOdeFunc
 class BaseOdeBlock(nn.Module):
     """A layer that consists of a differentiable ODE solver."""
 
-    def __init__(self,
-                 ode_func: Type[BaseOdeFunc],
-                 reg_funcs: List[Callable],
-                 opt: dict,
-                 edge_index: torch.Tensor,
-                 edge_attr: torch.Tensor,
-                 n_nodes: int,
-                 device,
-                 t: torch.Tensor) -> None:
+    def __init__(
+        self,
+        ode_func: Type[BaseOdeFunc],
+        reg_funcs: List[Callable],
+        opt: dict,
+        edge_index: torch.Tensor,
+        edge_attr: torch.Tensor,
+        n_nodes: int,
+        device,
+        t: torch.Tensor,
+    ) -> None:
         """
         Initializes the ODE Block Layer.
 
@@ -42,22 +44,25 @@ class BaseOdeBlock(nn.Module):
 
         self.opt: dict = opt
         self.t: torch.Tensor = t
-        self.aug_dim: int = 2 if opt['use_augmentation'] else 1
-        self.d_hidden = opt['d_hidden']
+        self.aug_dim: int = 2 if opt["use_augmentation"] else 1
+        self.d_hidden = opt["d_hidden"]
         self.n_nodes = n_nodes
         self.in_features = self.out_features = self.aug_dim * self.d_hidden
-        self.ode_func: BaseOdeFunc = ode_func(in_features=self.in_features,
-                                              out_features=self.out_features,
-                                              opt=opt,
-                                              edge_index=edge_index,
-                                              edge_attr=edge_attr,
-                                              device=device)
+        self.ode_func: BaseOdeFunc = ode_func(
+            in_features=self.in_features,
+            out_features=self.out_features,
+            opt=opt,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            device=device,
+        )
 
-        self.reg_ode_func = RegularizedOdeFunc(ode_func=self.ode_func,
-                                               reg_funcs=reg_funcs)
+        self.reg_ode_func = RegularizedOdeFunc(
+            ode_func=self.ode_func, reg_funcs=reg_funcs
+        )
         self.n_reg = len(reg_funcs)
         # The train integrator is the actual neural ODE solver.
-        self.train_integrator = odeint_adjoint if opt['adjoint'] else odeint
+        self.train_integrator = odeint_adjoint if opt["adjoint"] else odeint
         self.test_integrator = None
 
         self.default_rtol = 1e-7
@@ -67,7 +72,7 @@ class BaseOdeBlock(nn.Module):
         self.rtol: Optional[float] = None
         self.adjoint_atol: Optional[float] = None
         self.adjoint_rtol: Optional[float] = None
-        self.tol_scale_factor: float = self.opt['tol_scale']
+        self.tol_scale_factor: float = self.opt["tol_scale"]
 
         self.set_tol()
 
@@ -92,7 +97,7 @@ class BaseOdeBlock(nn.Module):
         """
         self.atol = self.tol_scale_factor * self.default_atol
         self.rtol = self.tol_scale_factor * self.default_rtol
-        if self.opt['adjoint']:
+        if self.opt["adjoint"]:
             self.adjoint_atol = self.tol_scale_factor * self.default_atol
             self.adjoint_rtol = self.tol_scale_factor * self.default_rtol
 
@@ -107,8 +112,7 @@ class BaseOdeBlock(nn.Module):
         self.adjoint_atol = self.default_atol
         self.adjoint_rtol = self.default_rtol
 
-    def set_time(self,
-                 time: int) -> None:
+    def set_time(self, time: int) -> None:
         """
         Set the current evaluation point (in time) in the time tensor.
 
@@ -121,4 +125,7 @@ class BaseOdeBlock(nn.Module):
         self.t = torch.tensor([0, time])
 
     def __repr__(self):
-        return self.__class__.__name__ + f"(Time Interval {str(self.t[0].item())} -> {str(self.t[1].item())})"
+        return (
+            self.__class__.__name__
+            + f"(Time Interval {str(self.t[0].item())} -> {str(self.t[1].item())})"
+        )

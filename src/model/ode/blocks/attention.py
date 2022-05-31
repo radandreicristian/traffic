@@ -12,65 +12,77 @@ from torchdiffeq import odeint_adjoint, odeint
 
 from src.model.ode.blocks.base import BaseOdeBlock
 from src.model.ode.blocks.funcs.base import BaseOdeFunc
-from src.model.ode.blocks.funcs.scaled_dot_attention import SparseGraphTransformerAttention
+from src.model.ode.blocks.funcs.scaled_dot_attention import (
+    SparseGraphTransformerAttention,
+)
 from src.model.ode.blocks.utils import get_rw_adj
 
 
 class AttentionOdeBlock(BaseOdeBlock):
-    def __init__(self,
-                 ode_func: Type[BaseOdeFunc],
-                 reg_funcs: List[Callable],
-                 opt: dict,
-                 edge_index: torch.Tensor,
-                 edge_attr: torch.Tensor,
-                 n_nodes: int,
-                 device,
-                 t=torch.tensor([0, 1]),
-                 gamma=.5):
-        super(AttentionOdeBlock, self).__init__(ode_func=ode_func,
-                                                reg_funcs=reg_funcs,
-                                                opt=opt,
-                                                edge_index=edge_index,
-                                                edge_attr=edge_attr,
-                                                n_nodes=n_nodes,
-                                                t=t,
-                                                device=device)
+    def __init__(
+        self,
+        ode_func: Type[BaseOdeFunc],
+        reg_funcs: List[Callable],
+        opt: dict,
+        edge_index: torch.Tensor,
+        edge_attr: torch.Tensor,
+        n_nodes: int,
+        device,
+        t=torch.tensor([0, 1]),
+        gamma=0.5,
+    ):
+        super(AttentionOdeBlock, self).__init__(
+            ode_func=ode_func,
+            reg_funcs=reg_funcs,
+            opt=opt,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            n_nodes=n_nodes,
+            t=t,
+            device=device,
+        )
 
-        self.ode_func = ode_func(in_features=self.in_features,
-                                 out_features=self.out_features,
-                                 opt=opt,
-                                 edge_index=edge_index,
-                                 edge_attr=edge_attr,
-                                 device=device)
+        self.ode_func = ode_func(
+            in_features=self.in_features,
+            out_features=self.out_features,
+            opt=opt,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            device=device,
+        )
 
-        edge_index, edge_attr = get_rw_adj(edge_index,
-                                           edge_attr=edge_attr,
-                                           norm_dim=1,
-                                           fill_value=opt['self_loop_weight'],
-                                           num_nodes=n_nodes,
-                                           dtype=torch.float32)
+        edge_index, edge_attr = get_rw_adj(
+            edge_index,
+            edge_attr=edge_attr,
+            norm_dim=1,
+            fill_value=opt["self_loop_weight"],
+            num_nodes=n_nodes,
+            dtype=torch.float32,
+        )
 
         self.ode_func.edge_index = edge_index.to(device)
         self.ode_func.edge_attr = edge_attr.to(device)
 
-        ode_integrator = odeint_adjoint if opt['adjoint'] else odeint
+        ode_integrator = odeint_adjoint if opt["adjoint"] else odeint
         self.train_integrator = ode_integrator
         self.test_integrator = ode_integrator
 
         self.set_tol()
-        self.attention_layer = SparseGraphTransformerAttention(in_features=self.in_features,
-                                                               out_features=self.out_features,
-                                                               opt=opt,
-                                                               edge_attr=self.ode_func.edge_attr,
-                                                               device=device)
+        self.attention_layer = SparseGraphTransformerAttention(
+            in_features=self.in_features,
+            out_features=self.out_features,
+            opt=opt,
+            edge_attr=self.ode_func.edge_attr,
+            device=device,
+        )
 
     def get_attention_weights(self, x):
-        attention, _ = self.attention_layer(x=x,
-                                            edge=self.ode_func.edge_index)
+        attention, _ = self.attention_layer(x=x, edge=self.ode_func.edge_index)
         return attention
 
-    def forward(self,
-                x: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, Tuple[Any]]]:
+    def forward(
+        self, x: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Tuple[Any]]]:
         t = self.t.type_as(x)
         self.ode_func.attention_weights = self.get_attention_weights(x)
         self.reg_ode_func.ode_func.attention_weights = self.ode_func.attention_weights
@@ -84,22 +96,34 @@ class AttentionOdeBlock(BaseOdeBlock):
 
         if self.opt["adjoint"] and self.training:
             state_dt = integrator(
-                func, state, t,
-                method=self.opt['solver'],
-                options=dict(step_size=self.opt["step_size"], max_iters=self.opt['max_iters']),
+                func,
+                state,
+                t,
+                method=self.opt["solver"],
+                options=dict(
+                    step_size=self.opt["step_size"], max_iters=self.opt["max_iters"]
+                ),
                 adjoint_method=self.opt["adjoint_solver"],
-                adjoint_options=dict(step_size=self.opt["step_size"], max_iters=self.opt['max_iters']),
+                adjoint_options=dict(
+                    step_size=self.opt["step_size"], max_iters=self.opt["max_iters"]
+                ),
                 atol=self.atol,
                 rtol=self.rtol,
                 adjoint_atol=self.adjoint_atol,
-                adjoint_rtol=self.adjoint_rtol)
+                adjoint_rtol=self.adjoint_rtol,
+            )
         else:
             state_dt = integrator(
-                func, state, t,
-                method=self.opt['solver'],
-                options=dict(step_size=self.opt["step_size"], max_iters=self.opt['max_iters']),
+                func,
+                state,
+                t,
+                method=self.opt["solver"],
+                options=dict(
+                    step_size=self.opt["step_size"], max_iters=self.opt["max_iters"]
+                ),
                 atol=self.atol,
-                rtol=self.rtol)
+                rtol=self.rtol,
+            )
 
         if self.training and self.n_reg > 0:
             z = state_dt[0][1]

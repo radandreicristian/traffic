@@ -1,10 +1,10 @@
 import logging
 import sys
 
-logger = logging.getLogger('traffic')
-logger.setLevel(logging.DEBUG)
-
 formatter = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%d %b, %H:%M")
-stdout_handler = logging.StreamHandler(sys.stdout)
 
-logger.addHandler(stdout_handler)
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setLevel(logging.NOTSET)
+stdout_handler.setFormatter(formatter)
+
+logging.basicConfig(handlers=[stdout_handler], level=logging.INFO)

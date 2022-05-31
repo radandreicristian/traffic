@@ -29,8 +29,8 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-train_batch_size: 2
-test_batch_size: 2
+train_batch_size: 8
+test_batch_size: 8
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
@@ -51,11 +51,14 @@ early_stop_patience: 7
 ##################################### Model Configuration ##########################################
 
 # [lgdr, gdr, ode, vae, gman, gman2]
-model_type: gman2
+model_type: gatman
 
 # Size of the hidden feature vectors in the model (int)
-d_hidden: 32
+d_hidden: 8
 
+d_hidden_pos: 8
+
+linformer_k: 2
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
 use_mlp_in: True
 
@@ -148,7 +151,7 @@ leaky_relu_slope: .2
 attention_dropout: .3
 
 # Number of attention heads (int) {heads}
-n_heads: 8
+n_heads: 4
 
 # Attention normalization index (int, 0/1) - 0: by rows, 1: by cols
 attention_norm_idx: 0
@@ -183,6 +186,10 @@ n_future_steps: 12
 n_features: 12
 ##################################### Rewiring Configuration ######################################
 # TODO
+
+knn_rewire: False
+
+knn_rewire_k: 5
 
 ##################################### Beltrami Configuration ######################################
 use_beltrami: False

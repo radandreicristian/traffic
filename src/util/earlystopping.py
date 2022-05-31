@@ -11,11 +11,7 @@ class EarlyStopping:
     Source: https://github.com/Bjarten/early-stopping-pytorch
     """
 
-    def __init__(self,
-                 checkpoint_path: str,
-                 patience,
-                 verbose=False,
-                 delta=0) -> None:
+    def __init__(self, checkpoint_path: str, patience, verbose=False, delta=0) -> None:
         """
 
         :param patience: How long to wait after last time validation loss improved.
@@ -34,11 +30,9 @@ class EarlyStopping:
         self.val_loss_min = np.Inf
         self.delta = delta
         self.checkpoint_path = checkpoint_path
-        self.logger = logging.getLogger('traffic')
+        self.logger = logging.getLogger("traffic")
 
-    def __call__(self,
-                 val_loss: float,
-                 model: torch.nn.Module) -> None:
+    def __call__(self, val_loss: float, model: torch.nn.Module) -> None:
         """
         Checks whether the early stopping should trigger.
 
@@ -53,7 +47,7 @@ class EarlyStopping:
             self.save_checkpoint(val_loss, model)
         elif score < self.best_score + self.delta:
             self.counter += 1
-            self.logger.debug(f'Early stopping: {self.counter}/{self.patience}')
+            self.logger.info(f"Early stopping: {self.counter}/{self.patience}")
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
@@ -61,9 +55,7 @@ class EarlyStopping:
             self.save_checkpoint(val_loss, model)
             self.counter = 0
 
-    def save_checkpoint(self,
-                        val_loss,
-                        model) -> None:
+    def save_checkpoint(self, val_loss, model) -> None:
         """
         Save the model checkpoint to the path.
 
@@ -72,6 +64,8 @@ class EarlyStopping:
         :return: None.
         """
         if self.verbose:
-            self.logger.debug(f'Validation loss decreased ({self.val_loss_min:.2f} --> {val_loss:.2f}).  Saving model.')
+            self.logger.debug(
+                f"Validation loss decreased ({self.val_loss_min:.2f} --> {val_loss:.2f}).  Saving model."
+            )
         torch.save(model.state_dict(), self.checkpoint_path)
         self.val_loss_min = val_loss
