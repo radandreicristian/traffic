@@ -8,7 +8,7 @@ __all__ = [
     "LinearGMAN",
     "BaseGNN",
     "EfficientGMAN",
-    "FavorPlusGMAN"
+    "FavorPlusGMAN",
 ]
 
 from .base_net import BaseGNN

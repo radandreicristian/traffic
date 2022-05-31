@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
-from performer_pytorch import SelfAttention
+from linformer import LinformerSelfAttention
 from torch import Tensor
 
 from src.model.gman.gman_blocks import (
@@ -14,28 +14,37 @@ from src.model.gman.gman_blocks import (
     TransformAttention,
 )
 
+from fast_transformers.attention.linear_attention import LinearAttention
 
-class FavorPlusAttention(nn.Module):
+
+class LinearSpatialAttention(nn.Module):
     def __init__(
         self,
         d_hidden_feat,
         d_hidden_pos,
         n_heads,
+        n_nodes,
+        attention_map=None,
     ) -> None:
-        super(FavorPlusAttention, self).__init__()
+        super(LinearSpatialAttention, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
 
         assert self.d_hidden % n_heads == 0, (
             "Hidden size not divisible by number of " "heads."
         )
 
+        if not attention_map:
+            self.attention_map = lambda x: torch.nn.functional.elu(x) + 1
+        else:
+            self.attention_map = attention_map
+
         self.n_heads = n_heads
-        self.linear_self_attention = SelfAttention(
-            dim=self.d_hidden,
-            heads=self.n_heads,
-            dim_head=self.d_hidden // n_heads,
-            local_window_size=self.d_hidden,
-            causal=False,
+        self.n_nodes = n_nodes
+        self.d_head = self.d_hidden // self.n_heads
+        self.linear_self_attention = LinearAttention(query_dimensions=self.d_hidden)
+
+        self.to_qkv = nn.Linear(
+            in_features=self.d_hidden, out_features=3 * self.d_hidden, bias=False
         )
 
         self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
@@ -45,25 +54,39 @@ class FavorPlusAttention(nn.Module):
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
         h = rearrange(h, "b l n d -> (b l) n d")
-        h = self.linear_self_attention(h)
-        h = rearrange(h, "(b l) n d -> b l n d", b=b)
+        q, k, v = map(
+            lambda t: rearrange(t, "b n (h dh) -> b n h dh", h=self.n_heads),
+            torch.chunk(self.to_qkv(h), 3, dim=-1),
+        )
+
+        h = self.linear_self_attention(queries=q, keys=k, values=v,
+                                       attn_mask=torch.ones(self.d_hidden,
+                                                            self.d_head),
+                                       query_lengths=self.d_head,
+                                       key_lengths=self.d_head)
+
+        h = rearrange(h, "(b l) n h dh -> b l n (h dh)", b=b)
         return f.relu(self.fc_out(h))
 
 
-class FavorPlusSpatioTemporalBlock(nn.Module):
+class LinearSpatioTemporalBlock(nn.Module):
     def __init__(
         self,
         n_heads,
         d_hidden,
         d_hidden_pos,
         bn_decay,
+        n_nodes,
+        k,
     ):
-        super(FavorPlusSpatioTemporalBlock, self).__init__()
+        super(LinearSpatioTemporalBlock, self).__init__()
 
-        self.spatial_attention = FavorPlusAttention(
+        self.spatial_attention = LinearSpatialAttention(
             d_hidden_feat=d_hidden,
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
+            n_nodes=n_nodes,
+            k=k,
         )
         self.temporal_attention = TemporalAttention(
             d_hidden=d_hidden,
@@ -82,11 +105,11 @@ class FavorPlusSpatioTemporalBlock(nn.Module):
         return x + h
 
 
-class FavorPlusGMAN(nn.Module):
+class FastLinearGMAN(nn.Module):
     def __init__(
         self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(FavorPlusGMAN, self).__init__()
+        super(FastLinearGMAN, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")
@@ -109,11 +132,13 @@ class FavorPlusGMAN(nn.Module):
         self.linformer_k = opt.get("linformer_k")
         self.encoder = nn.ModuleList(
             [
-                FavorPlusSpatioTemporalBlock(
+                LinearSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
+                    n_nodes=self.n_nodes,
+                    k=self.linformer_k,
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -123,11 +148,13 @@ class FavorPlusGMAN(nn.Module):
         )
         self.decoder = nn.ModuleList(
             [
-                FavorPlusSpatioTemporalBlock(
+                LinearSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
+                    n_nodes=self.n_nodes,
+                    k=self.linformer_k,
                 )
                 for _ in range(self.n_blocks)
             ]

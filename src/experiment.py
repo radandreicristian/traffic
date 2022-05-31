@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInMemory
 
+from src.model.gman.gman_linear import FastLinearGMAN
 from src.model.gman.gatman import GATMAN
 from src.util.utils import get_number_of_nodes
 from src.data.traffic_datamodule import TrafficDataModule
@@ -73,6 +74,9 @@ class Experiment:
 
         self.batch_log_frequency = opt.get("batch_log_frequency", 50)
         self.test_rmses: Optional[Dict] = None
+
+        self.run_from_checkpoint = opt.get("from_checkpoint", False)
+        self.task_checkpoint = opt.get("clearml_task_id")
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -175,7 +179,8 @@ class Experiment:
         mapes = {
             k: torch.mean(
                 torch.abs(y_signal[:, v, :] - y_hat.detach()[:, v, :])
-                / y_signal[:, v, :] + 1e-3).item()
+                / (y_signal[:, v, :] + 1e-3)
+            ).item()
             for k, v in indices.items()
         }
 
@@ -293,7 +298,7 @@ class Experiment:
 
         self.opt["n_nodes"] = get_number_of_nodes(self.dataset, self.opt)
 
-    def setup(self):
+    def setup_new(self):
         """
         Setup the experiment.
 
@@ -319,6 +324,9 @@ class Experiment:
         params = [p for p in self.model.parameters() if p.requires_grad]
         self.set_optimizer(params)
 
+    def setup_existing(self) -> None:
+        pass
+
     def set_model(self) -> None:
         models = {
             "lgdr": LatentGraphDiffusionRecurrentNet,
@@ -330,7 +338,8 @@ class Experiment:
             "egcnet": EGCNet,
             "gman_linear": LinearGMAN,
             "gman_efficient": EfficientGMAN,
-            "gman_favor": FavorPlusGMAN
+            "gman_favor": FavorPlusGMAN,
+            "gman_fast": FastLinearGMAN
         }
 
         non_temporal_augmented_models = ["lgdr", "gdr", "ode"]
@@ -484,7 +493,7 @@ class Experiment:
             _, metrics = self.eval_step(batch=batch, use_best_model=True)
             test_rmses.append(metrics["rmses"])
             test_maes.append(metrics["maes"])
-            test_mapes.append(metrics["maes"])
+            test_mapes.append(metrics["mapes"])
 
         test_rmses = self.mean_metric(test_rmses)
         test_maes = self.mean_metric(test_maes)
@@ -498,12 +507,14 @@ class Experiment:
         # this is for optuna
         self.test_rmses = test_rmses
 
-    def run(self):
-        self.logger.info("Setting up the experiment.")
+    def _resume_previous_experiment(self):
+        self.setup_existing()
 
-        StdStreamPatch.remove_std_logger()
+        self.logger.info("Resuming training the model.")
 
-        self.setup()
+    def _run_new_experiment(self):
+
+        self.setup_new()
 
         self.logger.info("Starting training the model.")
 
@@ -516,6 +527,16 @@ class Experiment:
             self.test()
 
             self.task.close()
+
+    def run(self):
+        StdStreamPatch.remove_std_logger()
+
+        if self.run_from_checkpoint:
+            self.logger.info("Resuming previous experiment.")
+            self._resume_previous_experiment()
+        else:
+            self.logger.info("Setting up the experiment.")
+            self._run_new_experiment()
 
     def get_test_rmse(self):
         test_rmse_values = self.test_rmses.values()
