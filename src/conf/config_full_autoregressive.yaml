@@ -1,0 +1,75 @@
+################################## Experiment Configuration #######################################
+batch_log_frequency: 100
+
+##################################### Data Configuration ##########################################
+
+# The name of the dataset - Either "metr_la" or "pems_bay"
+dataset: pems_bay
+
+# On-disk loading (like torchvision) or in-memory loading ("mem" or "disk")
+dataset_loading_location: mem
+
+
+valid_percentage: .1
+
+test_percentage: .2
+
+# There's around 32K points - ~20k train, ~6k valid, ~6k test
+sample_dataset: False
+
+# These sampling factors leave 32/32/32 samples in train/valid/test - Just for quick experimentation purposes.
+sample_train_factor: 0.016
+sample_valid_factor: 0.0072
+sample_test_factor: 0.0024
+
+train_batch_size: 32
+test_batch_size: 32
+
+################################### Optimizer Configuration ########################################
+# Number of epochs for training
+n_epochs: 100
+
+# Optimizer (str, sgd/rmsprop/adam/adamax)
+optimizer: adam
+
+# Learning rate of the optimizer
+lr: 1e-3
+
+# Weight decay (L2 norm)
+weight_decay: 5e-2
+
+# Early stopping patience
+early_stop_patience: 10
+
+##################################### Model Configuration ##########################################
+
+# [adn_base]
+model_type: adn_base
+
+# Size of the hidden feature vectors in the model (int)
+d_hidden: 64
+
+linformer_k: 16
+# Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
+use_mlp_in: True
+
+
+# Dropout rate of the model (float, <1.)
+p_dropout_model: .3
+
+# Number of attention heads (int) {heads}
+n_heads: 8
+
+n_blocks: 3
+
+##################################### Traffic Task Configuration #######################
+n_previous_steps: 12
+
+n_future_steps: 12
+
+n_features: 12
+
+################################ ADN ###################################################
+
+d_features: 64
+d_feedforward: 64
