@@ -45,7 +45,7 @@ model_type: adn_base
 linformer_k: 16
 
 # Dropout rate of the model (float, <1.)
-p_dropout_model: .3
+p_dropout: .3
 
 # Number of attention heads (int) {heads}
 n_heads: 4
