@@ -12,12 +12,5 @@ def get_number_of_nodes(dataset, opt):
         raise ValueError(f"Invalid dataset loading location {dataset_loading_location}")
 
 
-def get_number_of_nodes_autoregressive(dataset, opt):
-    dataset_loading_location = opt.get("dataset_loading_location")
-
-    if dataset_loading_location == ON_DISK:
-        return dataset[0].x.size()[1]
-    elif dataset_loading_location == IN_MEMORY:
-        return dataset[0][0]["features"].size()[0]
-    else:
-        raise ValueError(f"Invalid dataset loading location {dataset_loading_location}")
+def get_number_of_nodes_autoregressive(dataset):
+    return dataset[0][0]["features"].size()[0]

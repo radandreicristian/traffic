@@ -1,5 +1,4 @@
 import logging
-import os.path as osp
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
@@ -12,10 +11,11 @@ import torch.cuda
 from clearml import Task, TaskTypes, Logger
 from einops import repeat
 from omegaconf import DictConfig
-from torch.nn.functional import mse_loss
+from torch.nn.functional import l1_loss
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
-from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInMemory
+from torch_geometric.datasets import MetrLaInMemory, PemsBayInMemory
 
 from src.util.utils import get_number_of_nodes_autoregressive
 from src.data.traffic_datamodule_adn import TrafficDataModule
@@ -68,6 +68,7 @@ class AutoregressiveExperiment:
         self.run_from_checkpoint = opt.get("from_checkpoint", False)
         self.task_checkpoint = opt.get("clearml_task_id")
         self.spatial_range: Optional[torch.Tensor] = None
+        self.scheduler = None
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -106,7 +107,6 @@ class AutoregressiveExperiment:
         :return:
         """
 
-        self.logger.info(str(self.model))
         model_parameters = filter(lambda p: p.requires_grad, self.model.parameters())
         total_params = sum([np.prod(p.size()) for p in model_parameters])
         self.logger.info(f"Total trainable params: {total_params}")
@@ -184,7 +184,7 @@ class AutoregressiveExperiment:
         else:
             y_hat = self.model(**model_args)
 
-        loss = mse_loss(tgt["features"], y_hat)
+        loss = l1_loss(tgt["features"], y_hat)
 
         metrics = self.compute_metrics(tgt["features"], y_hat)
 
@@ -216,6 +216,7 @@ class AutoregressiveExperiment:
                              self.n_future_steps, 1)).to(self.device)
 
         y_hat[..., 0, :] = src_features[..., -1, :]
+        print(src["interval_of_day"].size())
         model_args = {
             "src_features": src_features,
             "src_interval_of_day": src["interval_of_day"],
@@ -243,7 +244,7 @@ class AutoregressiveExperiment:
         else:
             y_hat = self.model(**model_args)
 
-        loss = mse_loss(tgt["features"], y_hat)
+        loss = l1_loss(tgt["features"], y_hat)
         metrics = self.compute_metrics(tgt["features"], y_hat)
 
         loss_value = loss.item()
@@ -254,13 +255,10 @@ class AutoregressiveExperiment:
 
     def setup_data(self):
         datasets = {
-            (METR_LA_DATASET_NAME, IN_MEMORY): MetrLaInMemory,
-            (METR_LA_DATASET_NAME, ON_DISK): MetrLa,
-            (PEMS_BAY_DATASET_NAME, IN_MEMORY): PemsBayInMemory,
-            (PEMS_BAY_DATASET_NAME, ON_DISK): PemsBay,
+            METR_LA_DATASET_NAME: MetrLaInMemory,
+            PEMS_BAY_DATASET_NAME: PemsBayInMemory,
         }
 
-        dataset_loading_location = self.opt.get("dataset_loading_location")
         dataset_name = self.opt.get("dataset")
         data_root_arg = self.opt.get("data_path")
 
@@ -269,9 +267,9 @@ class AutoregressiveExperiment:
         )
 
         # This works on Path objects.
-        data_path = data_root / dataset_loading_location / dataset_name
+        data_path = data_root / "mem" / dataset_name
 
-        self.dataset = datasets[(dataset_name, dataset_loading_location)](
+        self.dataset = datasets[dataset_name](
             root=str(data_path.absolute()),
             n_previous_steps=self.n_previous_steps,
             n_future_steps=self.n_future_steps,
@@ -283,7 +281,7 @@ class AutoregressiveExperiment:
         self.valid_dataloader = self.datamodule.val_dataloader()
         self.test_dataloader = self.datamodule.test_dataloader()
 
-        self.opt["n_nodes"] = get_number_of_nodes_autoregressive(self.dataset, self.opt)
+        self.opt["n_nodes"] = get_number_of_nodes_autoregressive(self.dataset)
         spatial_range = torch.arange(start=0, end=self.opt["n_nodes"]).to(self.device)
         self.spatial_range = repeat(spatial_range, 'n -> n t', t=self.n_future_steps)
 
@@ -304,8 +302,6 @@ class AutoregressiveExperiment:
             task_type=TaskTypes.training,
             reuse_last_task_id=False,
             output_uri="s3://traffic-models",
-            auto_connect_frameworks=False,
-
         )
         self.clearml_logger = self.task.logger
 
@@ -332,14 +328,17 @@ class AutoregressiveExperiment:
         except KeyError:
             raise
         self.model = model_type(
-                d_features = self.opt["d_features"],
+                d_features=self.opt["d_features"],
                 d_hidden=self.opt["d_hidden"],
                 d_feedforward=self.opt["d_feedforward"],
-                n_heads= self.opt["n_heads"],
-                p_dropout= self.opt["p_dropout"],
-                n_blocks= self.opt["n_blocks"],
-                spatial_seq_len= self.opt["n_nodes"],
+                n_heads=self.opt["n_heads"],
+                p_dropout=self.opt["p_dropout"],
+                n_blocks=self.opt["n_blocks"],
+                spatial_seq_len=self.opt["n_nodes"],
                 temporal_seq_len=self.n_future_steps).to(self.device)
+
+        for p in self.model.parameters():
+            p.register_hook(lambda grad: torch.clamp(grad, max=0.1))
 
     def set_optimizer(
         self, params: Union[Iterable[torch.Tensor], Dict[AnyStr, torch.Tensor]]
@@ -353,30 +352,26 @@ class AutoregressiveExperiment:
         """
         optimizer_name = self.opt["optimizer"]
         lr = self.opt["lr"]
-        weight_decay = self.opt["weight_decay"]
 
         if optimizer_name == "sgd":
-            optimizer = torch.optim.SGD(params=params, lr=lr, weight_decay=weight_decay)
+            optimizer = torch.optim.SGD(params=params, lr=lr)
         elif optimizer_name == "rmsprop":
-            optimizer = torch.optim.RMSprop(
-                params=params, lr=lr, weight_decay=weight_decay
-            )
+            optimizer = torch.optim.RMSprop(params=params, lr=lr)
         elif optimizer_name == "adagrad":
-            optimizer = torch.optim.Adagrad(
-                params=params, lr=lr, weight_decay=weight_decay
-            )
+            optimizer = torch.optim.Adagrad(params=params, lr=lr)
         elif optimizer_name == "adam":
+            betas = (self.opt["beta_1"], self.opt["beta_2"])
+            eps = self.opt["eps"]
             optimizer = torch.optim.Adam(
-                params=params, lr=lr, weight_decay=weight_decay
+                params=params, lr=lr, betas=betas, eps=eps
             )
         elif optimizer_name == "adamax":
-            optimizer = torch.optim.Adamax(
-                params=params, lr=lr, weight_decay=weight_decay
-            )
+            optimizer = torch.optim.Adamax(params=params, lr=lr)
         else:
             raise ValueError("Unsupported optimizer: {}".format(optimizer_name))
 
         self.optimizer = optimizer
+        self.scheduler = MultiStepLR(self.optimizer, milestones=[15, 30, 45], gamma=0.5)
 
     def train(self):
         patience = self.opt["early_stop_patience"]
@@ -460,6 +455,7 @@ class AutoregressiveExperiment:
                 torch.save(self.best_model.state_dict(), self.model_path)
                 self.task.update_output_model(self.model_path)
 
+            self.scheduler.step()
             early_stopping(valid_loss, self.model)
             if early_stopping.early_stop:
                 self.logger.info(
@@ -468,6 +464,7 @@ class AutoregressiveExperiment:
                 )
                 self.task.update_output_model(self.model_path)
                 break
+
         self.logger.info(
             f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_rmse}"
         )
@@ -510,13 +507,13 @@ class AutoregressiveExperiment:
 
         self.logger.info("Starting training the model.")
 
-        #try:
-        self.train()
-        #except KeyboardInterrupt:
-        #    print("Force stopped training. Evaluating on test set.")
-        # finally:
-        self.logger.info("Starting testing the model.")
-        self.test()
+        try:
+            self.train()
+        except KeyboardInterrupt:
+            print("Force stopped training. Evaluating on test set.")
+        finally:
+            self.logger.info("Starting testing the model.")
+            self.test()
 
         self.task.close()
 

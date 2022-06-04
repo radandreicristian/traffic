@@ -1,16 +1,13 @@
 import logging
-from collections import Iterable, Container
-from typing import Optional, Callable, Sequence, List, Dict, Tuple, T_co
+from typing import Optional, Callable, Sequence, List, Dict, Tuple
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as f
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
-from torch.utils.data import Subset, DataLoader
-from torch_geometric.data import Data, Dataset
-
-from src.util.constants import IN_MEMORY, ON_DISK
+from torch.utils.data import DataLoader
+from torch_geometric.data import Dataset
 
 
 class TrafficDataModule(pl.LightningDataModule):
@@ -64,7 +61,7 @@ class TrafficDataModule(pl.LightningDataModule):
         :param stage: Unused.
         :return: None.
         """
-        dataset_len = len(list(self.dataset.x.values())[0])
+        dataset_len = self.dataset.len()
         valid_percentage = self.opt["valid_percentage"]
         test_percentage = self.opt["test_percentage"]
         train_percentage = 1.0 - (test_percentage + valid_percentage)
@@ -80,9 +77,7 @@ class TrafficDataModule(pl.LightningDataModule):
         valid_indices = self.sample(valid_indices, "valid")
         test_indices = self.sample(test_indices, "test")
 
-        self.logger.debug(
-            f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}"
-        )
+        print(f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}")
 
         self.train_dataset = KeyedSubset(self.dataset, train_indices)
 
@@ -159,8 +154,8 @@ class TrafficDataModule(pl.LightningDataModule):
             x[key] = torch.stack(x[key])
             y[key] = torch.stack(y[key])
             if key != "features":
-                x[key] = x[key].squeeze()
-                y[key] = y[key].squeeze()
+                x[key] = x[key].squeeze(dim=-1)
+                y[key] = y[key].squeeze(dim=-1)
         return x, y
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:

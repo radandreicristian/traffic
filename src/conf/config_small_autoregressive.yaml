@@ -1,14 +1,10 @@
 ################################## Experiment Configuration #######################################
-batch_log_frequency: 100
+batch_log_frequency: 200
 
 ##################################### Data Configuration ##########################################
 
 # The name of the dataset - Either "metr_la" or "pems_bay"
 dataset: pems_bay
-
-# On-disk loading (like torchvision) or in-memory loading ("mem" or "disk")
-dataset_loading_location: mem
-
 
 valid_percentage: .1
 
@@ -22,7 +18,7 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-batch_size: 16
+batch_size: 8
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
@@ -32,10 +28,11 @@ n_epochs: 1
 optimizer: adam
 
 # Learning rate of the optimizer
-lr: 1e-3
+lr: 2e-3
 
-# Weight decay (L2 norm)
-weight_decay: 5e-2
+beta_1: 0.9
+beta_2: 0.98
+eps: 0.000000001
 
 # Early stopping patience
 early_stop_patience: 10
@@ -47,8 +44,6 @@ model_type: adn_base
 
 
 linformer_k: 16
-# Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
-use_mlp_in: True
 
 # Dropout rate of the model (float, <1.)
 p_dropout: .3
