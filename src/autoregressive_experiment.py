@@ -57,7 +57,7 @@ class AutoregressiveExperiment:
 
         self.logger = logging.getLogger("traffic")
 
-        self.model_path = "/best_model.pt"
+        self.model_path = "best_model.pt"
 
         self.positional_embeddings: Optional[torch.Tensor] = None
 
