@@ -166,7 +166,7 @@ class AutoregressiveExperiment:
         src, tgt = batch
         src_features = src["features"]
         tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                  tgt["features"][..., 1:, :]), dim=-2)
+                                  tgt["features"][..., :-1, :]), dim=-2)
 
         model_args = {
             "src_features": src_features,
