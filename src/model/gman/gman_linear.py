@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
-from linformer import LinformerSelfAttention
 from torch import Tensor
 
 from src.model.gman.gman_blocks import (
@@ -14,7 +13,6 @@ from src.model.gman.gman_blocks import (
     TransformAttention,
 )
 
-from fast_transformers.attention.linear_attention import LinearAttention
 
 
 class LinearSpatialAttention(nn.Module):

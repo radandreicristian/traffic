@@ -312,6 +312,8 @@ class Experiment:
             task_type=TaskTypes.training,
             reuse_last_task_id=False,
             output_uri="s3://traffic-models",
+            auto_connect_frameworks=False,
+
         )
         self.clearml_logger = self.task.logger
 
