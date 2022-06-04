@@ -216,7 +216,6 @@ class AutoregressiveExperiment:
                              self.n_future_steps, 1)).to(self.device)
 
         y_hat[..., 0, :] = src_features[..., -1, :]
-        print(src["interval_of_day"].size())
         model_args = {
             "src_features": src_features,
             "src_interval_of_day": src["interval_of_day"],
@@ -295,7 +294,6 @@ class AutoregressiveExperiment:
         :return:
         """
         tag = binascii.b2a_hex(os.urandom(3)).decode("utf-8")
-        print('here before init')
         self.task = Task.init(
             project_name="Traffic Forecasting - ADN",
             task_name=f"Experiment {tag}",
@@ -383,7 +381,6 @@ class AutoregressiveExperiment:
             train_maes = []
             train_mapes = []
             train_losses = []
-            print("training")
             for idx, batch in enumerate(self.train_dataloader):
                 start_time = time.time()
                 batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
@@ -421,7 +418,6 @@ class AutoregressiveExperiment:
             valid_maes = []
             valid_mapes = []
             valid_losses = []
-            print("validating")
 
             for idx, batch in enumerate(self.valid_dataloader):
                 batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
@@ -447,7 +443,6 @@ class AutoregressiveExperiment:
             self.logger.info(f"[Valid|Ep.{epoch}|Overall]: Loss {valid_loss:.2f}.")
 
             mean_valid_rmse = np.mean(list(valid_rmses.values()))
-            print("valid rmse", mean_valid_rmse, "best", self.best_val_rmse)
             if mean_valid_rmse < self.best_val_rmse:
                 self.best_model = self.model
                 self.best_val_rmse = mean_valid_rmse
