@@ -89,10 +89,6 @@ class TrafficDataModule(pl.LightningDataModule):
         self.test_dataset = KeyedSubset(self.dataset, test_indices)
 
     @staticmethod
-    def onehot_hour_of_day(tensor: torch.Tensor) -> torch.Tensor:
-        return f.one_hot(tensor.to(torch.long), num_classes=24)
-
-    @staticmethod
     def onehot_day_of_week(tensor: torch.Tensor) -> torch.Tensor:
         return tensor.to(torch.long)
 
@@ -119,19 +115,18 @@ class TrafficDataModule(pl.LightningDataModule):
         """
 
         normalization_functions = {
-            "values": self.normalize,
+            "features": self.normalize,
             "day_of_week": self.onehot_day_of_week,
             "interval_of_day": self.onehot_interval_of_day,
-            "hour_of_day": self.onehot_hour_of_day
         }
 
-        keys = batch[0][0].keys()
-        x = dict.fromkeys(keys)
-        y = dict.fromkeys(keys)
-
+        keys = list(batch[0][0].keys())
+        x = {k: [] for k in keys}
+        y = {k: [] for k in keys}
+        x["raw_features"] = []
+        y["raw_features"] = []
         # Sample is a tuple (x, y)
         for sample in batch:
-
             # x_, y_ are dictionaries of {'features': ...,}
             x_, y_ = sample
             for key in keys:
@@ -140,20 +135,16 @@ class TrafficDataModule(pl.LightningDataModule):
                 if normalizer:
                     x__ = normalizer(x__)
                     y__ = normalizer(y__)
-
-                if not x[key]:
-                    x[key] = [x__]
-                else:
                     x[key].append(x__)
-                if not y[key]:
-                    y[key] = [y__]
-                else:
                     y[key].append(y__)
+            x["raw_features"].append(x_["features"])
+            y["raw_features"].append(y_["features"])
 
-        for key in keys:
+        updated_keys = x.keys()
+        for key in updated_keys:
             x[key] = torch.stack(x[key])
             y[key] = torch.stack(y[key])
-            if key != "features":
+            if key != "features" and key != "raw_features":
                 x[key] = x[key].squeeze(dim=-1)
                 y[key] = y[key].squeeze(dim=-1)
         return x, y
@@ -198,6 +189,9 @@ class TrafficDataModule(pl.LightningDataModule):
             num_workers=2,
             collate_fn=self.collate_fn,
         )
+
+    def get_normalizers(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        return self.train_mean, self.train_std
 
 
 class KeyedSubset:

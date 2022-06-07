@@ -165,6 +165,8 @@ class AutoregressiveExperiment:
 
         src, tgt = batch
         src_features = src["features"]
+
+        # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
         tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
                                   tgt["features"][..., :-1, :]), dim=-2)
 
@@ -184,9 +186,9 @@ class AutoregressiveExperiment:
         else:
             y_hat = self.model(**model_args)
 
-        loss = l1_loss(tgt["features"], y_hat)
+        loss = l1_loss(tgt["raw_features"], y_hat)
 
-        metrics = self.compute_metrics(tgt["features"], y_hat)
+        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
 
         loss.backward()
         self.optimizer.step()
@@ -234,6 +236,7 @@ class AutoregressiveExperiment:
             else:
                 y_hat_intermediary = self.model(**model_args)
 
+            y_hat_intermediary = (y_hat_intermediary - self.train_mean) / self.train_std
             y_hat[..., i, :] = y_hat_intermediary[..., i, :]
             model_args["tgt_features"] = y_hat
 
@@ -243,8 +246,8 @@ class AutoregressiveExperiment:
         else:
             y_hat = self.model(**model_args)
 
-        loss = l1_loss(tgt["features"], y_hat)
-        metrics = self.compute_metrics(tgt["features"], y_hat)
+        loss = l1_loss(tgt["raw_features"], y_hat)
+        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
 
         loss_value = loss.item()
 
@@ -284,6 +287,7 @@ class AutoregressiveExperiment:
         spatial_range = torch.arange(start=0, end=self.opt["n_nodes"]).to(self.device)
         self.spatial_range = repeat(spatial_range, 'n -> n t', t=self.n_future_steps)
 
+        self.train_mean, self.train_std = self.datamodule.get_normalizers()
         # Todo - This is assuming N_FUTURE = N_PAST
 
     def setup_new(self):
@@ -335,6 +339,7 @@ class AutoregressiveExperiment:
                 spatial_seq_len=self.opt["n_nodes"],
                 temporal_seq_len=self.n_future_steps).to(self.device)
 
+        # Todo - Maybe remove the gradients clipping?
         for p in self.model.parameters():
             p.register_hook(lambda grad: torch.clamp(grad, max=0.1))
 

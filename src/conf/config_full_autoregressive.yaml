@@ -28,7 +28,7 @@ n_epochs: 100
 optimizer: adam
 
 # Learning rate of the optimizer
-lr: 2e-3
+lr: 0.002
 
 beta_1: 0.9
 beta_2: 0.98
