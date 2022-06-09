@@ -198,14 +198,54 @@ class AutoregressiveExperiment:
         return loss_value, metrics
 
     @torch.no_grad()
-    def eval_step(
-        self, batch: List[Dict[str, torch.Tensor]], use_best_model: bool = False
-    ) -> Tuple[torch.tensor, dict]:
+    def valid_step(self, batch: List[Dict[str, torch.Tensor]]):
+        """
+        A single training step, including forward, loss and backward pass for a batch.
+
+        :param batch: A tensor containing a batch of input data.
+        :return: A tuple containing the loss and the metrics.
+        """
+        self.model.train()
+        self.optimizer.zero_grad()
+
+        src, tgt = batch
+        src_features = src["features"]
+
+        # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
+        tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
+                                  tgt["features"][..., :-1, :]), dim=-2)
+
+        model_args = {
+            "src_features": src_features,
+            "src_interval_of_day": src["interval_of_day"],
+            "src_day_of_week": src["day_of_week"],
+            "src_spatial_descriptor": self.spatial_range,
+            "tgt_features": tgt_features,
+            "tgt_interval_of_day": tgt["interval_of_day"],
+            "tgt_day_of_week": tgt["day_of_week"],
+            "tgt_spatial_descriptor": self.spatial_range
+        }
+
+        y_hat = self.model(**model_args)
+
+        # De-normalize
+        y_hat = y_hat * self.train_std + self.train_mean
+
+        loss = masked_mae_loss(tgt["raw_features"], y_hat)
+        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
+
+        loss_value = loss.item()
+
+        del batch, loss
+        torch.cuda.empty_cache()
+        return loss_value, metrics
+
+    @torch.no_grad()
+    def test_step(self, batch: List[Dict[str, torch.Tensor]]) -> Tuple[torch.tensor, dict]:
         """
         A single evaluation (valid/test) step, including forward, loss and backward pass for a batch.
 
         :param batch: A tensor containing a batch of input data.
-        :param use_best_model: Whether to use the best model (for test set) or not.
         :return: A tuple containing the loss and the RMSEs.
         """
         src, tgt = batch
@@ -230,18 +270,12 @@ class AutoregressiveExperiment:
 
         # At the end of this loop y_hat will store P(n-1), F(0), ...F(n-1)
         for i in range(1, self.n_future_steps):
-            if use_best_model:
-                y_hat_intermediary = self.best_model(**model_args)
-            else:
-                y_hat_intermediary = self.model(**model_args)
-            y_hat[..., i, :] = y_hat_intermediary[..., i, :]
+            y_hat_intermediary = self.best_model(**model_args)
+            y_hat[..., :i+1, :] = y_hat_intermediary[..., :i+1, :]
             model_args["tgt_features"] = y_hat
 
         # Forward it one more time (in the autoencoder fashion) to get F(0),..., F(n)
-        if use_best_model:
-            y_hat = self.best_model(**model_args)
-        else:
-            y_hat = self.model(**model_args)
+        y_hat = self.best_model(**model_args)
 
         y_hat = y_hat * self.train_std + self.train_mean
 
@@ -425,7 +459,7 @@ class AutoregressiveExperiment:
 
             for idx, batch in enumerate(self.valid_dataloader):
                 batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
-                loss, metrics = self.eval_step(batch=batch)
+                loss, metrics = self.valid_step(batch=batch)
 
                 valid_losses.append(loss)
                 valid_rmses.append(metrics["rmses"])
@@ -478,7 +512,7 @@ class AutoregressiveExperiment:
         test_mapes = []
         for idx, batch in enumerate(self.test_dataloader):
             batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
-            _, metrics = self.eval_step(batch=batch, use_best_model=True)
+            _, metrics = self.test_step(batch=batch)
             test_rmses.append(metrics["rmses"])
             test_maes.append(metrics["maes"])
             test_mapes.append(metrics["mapes"])
