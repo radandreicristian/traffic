@@ -25,7 +25,7 @@ from src.util.earlystopping import EarlyStopping
 
 import os
 import binascii
-from src.util.masked_metrics import masked_mae, masked_mape, masked_rmse
+from src.util.masked_metrics import masked_mae, masked_mape, masked_rmse, masked_mae_loss
 
 
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
@@ -183,9 +183,11 @@ class AutoregressiveExperiment:
         else:
             y_hat = self.model(**model_args)
 
-        loss = l1_loss(tgt["features"], y_hat)
+        # De-normalize
+        y_hat = y_hat * self.train_std + self.train_mean
 
-        metrics = self.compute_metrics(tgt["features"], y_hat)
+        loss = masked_mae_loss(tgt["raw_features"], y_hat)
+        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
 
         loss.backward()
         self.optimizer.step()
@@ -241,8 +243,10 @@ class AutoregressiveExperiment:
         else:
             y_hat = self.model(**model_args)
 
-        loss = l1_loss(tgt["features"], y_hat)
-        metrics = self.compute_metrics(tgt["features"], y_hat)
+        y_hat = y_hat * self.train_std + self.train_mean
+
+        loss = masked_mae_loss(tgt["raw_features"], y_hat)
+        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
 
         loss_value = loss.item()
 

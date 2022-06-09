@@ -1,4 +1,5 @@
 import torch
+from torch.nn.functional import l1_loss
 
 
 def make_mask(y_true,
@@ -38,6 +39,17 @@ def masked_mape(y_true: torch.Tensor,
     mape = torch.abs(y_true - y_pred) / (y_true + 1e-7) * mask
     mape = torch.where(torch.isnan(mape), torch.zeros_like(mape), mape)
     return torch.mean(mape).item()
+
+
+def masked_mae_loss(y_true: torch.Tensor,
+                    y_pred: torch.Tensor,
+                    null_value=torch.nan) -> torch.Tensor:
+
+    mask = make_mask(y_true=y_true, null_value=null_value)
+
+    mae = torch.abs(y_true - y_pred) * mask
+    mae = torch.where(torch.isnan(mae), torch.zeros_like(mae), mae)
+    return torch.mean(mae)
 
 
 if __name__ == '__main__':
