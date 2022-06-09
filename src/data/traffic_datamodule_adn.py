@@ -123,8 +123,6 @@ class TrafficDataModule(pl.LightningDataModule):
         keys = list(batch[0][0].keys())
         x = {k: [] for k in keys}
         y = {k: [] for k in keys}
-        x["raw_features"] = []
-        y["raw_features"] = []
         # Sample is a tuple (x, y)
         for sample in batch:
             # x_, y_ are dictionaries of {'features': ...,}
@@ -137,14 +135,11 @@ class TrafficDataModule(pl.LightningDataModule):
                     y__ = normalizer(y__)
                     x[key].append(x__)
                     y[key].append(y__)
-            x["raw_features"].append(x_["features"])
-            y["raw_features"].append(y_["features"])
 
-        updated_keys = x.keys()
-        for key in updated_keys:
+        for key in keys:
             x[key] = torch.stack(x[key])
             y[key] = torch.stack(y[key])
-            if key != "features" and key != "raw_features":
+            if key != "features":
                 x[key] = x[key].squeeze(dim=-1)
                 y[key] = y[key].squeeze(dim=-1)
         return x, y

@@ -25,6 +25,8 @@ from src.util.earlystopping import EarlyStopping
 
 import os
 import binascii
+from src.util.masked_metrics import masked_mae, masked_mape, masked_rmse
+
 
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 
@@ -128,22 +130,17 @@ class AutoregressiveExperiment:
     @staticmethod
     def compute_metrics(y, y_hat):
         rmses = {
-            k: torch.sqrt(
-                torch.mean((y[:, v, :] - y_hat.detach()[:, v, :]) ** 2)
-            ).item()
+            k: masked_rmse(y[:, v, :], y_hat.detach()[:, v, :])
             for k, v in indices.items()
         }
 
         maes = {
-            k: torch.mean(torch.abs(y[:, v, :] - y_hat.detach()[:, v, :])).item()
+            k: masked_mae(y[:, v, :], y_hat.detach()[:, v, :])
             for k, v in indices.items()
         }
 
         mapes = {
-            k: torch.mean(
-                torch.abs(y[:, v, :] - y_hat.detach()[:, v, :])
-                / (y[:, v, :] + 1e-3)
-            ).item()
+            k: masked_mape(y[:, v, :], y_hat.detach()[:, v, :])
             for k, v in indices.items()
         }
 
@@ -186,9 +183,9 @@ class AutoregressiveExperiment:
         else:
             y_hat = self.model(**model_args)
 
-        loss = l1_loss(tgt["raw_features"], y_hat)
+        loss = l1_loss(tgt["features"], y_hat)
 
-        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
+        metrics = self.compute_metrics(tgt["features"], y_hat)
 
         loss.backward()
         self.optimizer.step()
@@ -235,8 +232,6 @@ class AutoregressiveExperiment:
                 y_hat_intermediary = self.best_model(**model_args)
             else:
                 y_hat_intermediary = self.model(**model_args)
-
-            y_hat_intermediary = (y_hat_intermediary - self.train_mean) / self.train_std
             y_hat[..., i, :] = y_hat_intermediary[..., i, :]
             model_args["tgt_features"] = y_hat
 
@@ -246,8 +241,8 @@ class AutoregressiveExperiment:
         else:
             y_hat = self.model(**model_args)
 
-        loss = l1_loss(tgt["raw_features"], y_hat)
-        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
+        loss = l1_loss(tgt["features"], y_hat)
+        metrics = self.compute_metrics(tgt["features"], y_hat)
 
         loss_value = loss.item()
 
