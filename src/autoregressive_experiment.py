@@ -271,11 +271,13 @@ class AutoregressiveExperiment:
         # At the end of this loop y_hat will store P(n-1), F(0), ...F(n-1)
         for i in range(1, self.n_future_steps):
             y_hat_intermediary = self.best_model(**model_args)
-            y_hat[..., :i+1, :] = y_hat_intermediary[..., :i+1, :]
+            y_hat[..., i, :] = y_hat_intermediary[..., i-1, :]
             model_args["tgt_features"] = y_hat
 
-        # Forward it one more time (in the autoencoder fashion) to get F(0),..., F(n)
-        y_hat = self.best_model(**model_args)
+        # Forward it one more time (in the auto-encoder fashion) to get F(0),..., F(n)
+        y_hat_intermediary = self.best_model(**model_args)
+        y_hat[..., :-1, :] = y_hat[..., 1:, :]
+        y_hat[..., -1, :] = y_hat_intermediary[..., -1, :]
 
         y_hat = y_hat * self.train_std + self.train_mean
 
