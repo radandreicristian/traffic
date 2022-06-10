@@ -1,7 +1,6 @@
 ################################## Experiment Configuration #######################################
 batch_log_frequency: 100
 
-project_name:
 ##################################### Data Configuration ##########################################
 
 # The name of the dataset - Either "metr_la" or "pems_bay"
@@ -29,8 +28,7 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-train_batch_size: 8
-test_batch_size: 8
+batch_size: 8
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
@@ -51,7 +49,7 @@ early_stop_patience: 7
 ##################################### Model Configuration ##########################################
 
 # [lgdr, gdr, ode, vae, gman, gman2]
-model_type: gatman
+model_type: gman
 
 # Size of the hidden feature vectors in the model (int)
 d_hidden: 8

@@ -24,12 +24,11 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-train_batch_size: 32
-test_batch_size: 32
+batch_size: 32
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
-n_epochs: 100
+n_epochs: 120
 
 # Optimizer (str, sgd/rmsprop/adam/adamax)
 optimizer: adam

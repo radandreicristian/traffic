@@ -16,6 +16,8 @@ from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInM
 
 from src.model.gman.gman_linear import FastLinearGMAN
 from src.model.gman.gatman import GATMAN
+from src.util.masked_metrics import masked_rmse, masked_mae, masked_mape, \
+    masked_mae_loss
 from src.util.utils import get_number_of_nodes
 from src.data.traffic_datamodule import TrafficDataModule
 from src.model import (
@@ -134,6 +136,26 @@ class Experiment:
             mean_metric_value[key] = np.mean([item[key] for item in values])
         return mean_metric_value
 
+    @staticmethod
+    def compute_metrics(y, y_hat):
+        rmses = {
+            k: masked_rmse(y[:, v, :], y_hat.detach()[:, v, :])
+            for k, v in indices.items()
+        }
+
+        maes = {
+            k: masked_mae(y[:, v, :], y_hat.detach()[:, v, :])
+            for k, v in indices.items()
+        }
+
+        mapes = {
+            k: masked_mape(y[:, v, :], y_hat.detach()[:, v, :])
+            for k, v in indices.items()
+        }
+
+        metrics = {"rmses": rmses, "maes": maes, "mapes": mapes}
+        return metrics
+
     def common_step(
         self, batch: List[torch.Tensor], pos_encoding=None, use_best_model: bool = False
     ) -> Tuple[torch.tensor, dict]:
@@ -162,30 +184,10 @@ class Experiment:
                 if not use_best_model
                 else self.best_model(x_signal)
             )
-        loss = mse_loss(y_signal, y_hat)
+        loss = masked_mae_loss(y_signal, y_hat)
 
-        rmses = {
-            k: torch.sqrt(
-                torch.mean((y_signal[:, v, :] - y_hat.detach()[:, v, :]) ** 2)
-            ).item()
-            for k, v in indices.items()
-        }
-
-        maes = {
-            k: torch.mean(torch.abs(y_signal[:, v, :] - y_hat.detach()[:, v, :])).item()
-            for k, v in indices.items()
-        }
-
-        mapes = {
-            k: torch.mean(
-                torch.abs(y_signal[:, v, :] - y_hat.detach()[:, v, :])
-                / (y_signal[:, v, :] + 1e-3)
-            ).item()
-            for k, v in indices.items()
-        }
-
+        metrics = self.compute_metrics(y_signal, y_hat)
         del x_signal, y_signal, y_hat, x_temporal, y_temporal
-        metrics = {"rmses": rmses, "maes": maes, "mapes": mapes}
         return loss, metrics
 
     def train_step(
@@ -305,13 +307,14 @@ class Experiment:
         Initializes the dataset, datamodule, experiment versioning,
         :return:
         """
-        tag = binascii.b2a_hex(os.urandom(3))
+        tag = binascii.b2a_hex(os.urandom(3)).decode("utf-8")
         self.task = Task.init(
             project_name="Graph Diffusion Traffic Forecasting",
             task_name=f"Train Task {tag}",
             task_type=TaskTypes.training,
             reuse_last_task_id=False,
             output_uri="s3://traffic-models",
+            auto_connect_frameworks={"pytorch" : ['best_model.pt']}
         )
         self.clearml_logger = self.task.logger
 
@@ -480,6 +483,7 @@ class Experiment:
             f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_rmse}"
         )
         if not early_stopping.early_stop:
+            print("Saving model...")
             torch.save(self.best_model.state_dict(), self.model_path)
             # self.task.update_output_model(self.model_path, "Model")
         self.task.update_output_model(self.model_path)

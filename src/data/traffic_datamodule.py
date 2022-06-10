@@ -27,8 +27,7 @@ class TrafficDataModule(pl.LightningDataModule):
 
         self.opt = opt
         self.dataset = dataset
-        self.train_batch_size = opt["train_batch_size"]
-        self.test_batch_size = opt["test_batch_size"]
+        self.batch_size = opt["batch_size"]
 
         self.train_dataset: Optional[Dataset] = None
         self.valid_dataset: Optional[Dataset] = None
@@ -96,8 +95,14 @@ class TrafficDataModule(pl.LightningDataModule):
         self.train_dataset = Subset(self.dataset, train_indices)
 
         train_features = torch.stack([x[:, :, 0] for x, _ in self.train_dataset])
-        self.train_mean = torch.mean(train_features)
-        self.train_std = torch.std(train_features)
+        nonzero = torch.count_nonzero(train_features)
+
+        nonzero_indices = train_features.nonzero(as_tuple=True)
+        nonzero_features = train_features[nonzero_indices].view(-1)
+
+        self.train_mean = torch.sum(train_features) / nonzero
+        self.train_std = torch.sqrt(torch.sum(nonzero_features - self.train_mean) ** 2 /
+                                    nonzero)
 
         self.valid_dataset = Subset(self.dataset, valid_indices)
         self.test_dataset = Subset(self.dataset, test_indices)
@@ -139,7 +144,8 @@ class TrafficDataModule(pl.LightningDataModule):
         x_signal = torch.stack([self.normalize(x_[..., 0]) for x_ in x]).unsqueeze(
             dim=-1
         )
-        y_signal = torch.stack([y_[..., 0] for y_ in y]).unsqueeze(dim=-1)
+        y_signal = torch.stack([self.normalize(y_[..., 0]) for y_ in y]).unsqueeze(
+            dim=-1)
 
         x_temporal = torch.stack([self.onehot_temporal(x_[..., 1:]) for x_ in x])
         y_temporal = torch.stack([self.onehot_temporal(y_[..., 1:]) for y_ in y])
@@ -155,7 +161,7 @@ class TrafficDataModule(pl.LightningDataModule):
         :return: A tuple containing the x and y tensors.
         """
         x_signal = torch.stack([self.normalize(data.x[..., 0]) for data in batch])
-        y_signal = torch.stack([data.x[..., 0] for data in batch])
+        y_signal = torch.stack([self.normalize(data.x[..., 0]) for data in batch])
 
         x_temporal = torch.stack(
             [self.onehot_temporal(data.x[..., 1:]) for data in batch]
@@ -174,7 +180,7 @@ class TrafficDataModule(pl.LightningDataModule):
         """
         return DataLoader(
             self.train_dataset,
-            batch_size=self.train_batch_size,
+            batch_size=self.batch_size,
             num_workers=2,
             shuffle=True,
             pin_memory=True,
@@ -189,7 +195,7 @@ class TrafficDataModule(pl.LightningDataModule):
         """
         return DataLoader(
             self.valid_dataset,
-            batch_size=self.test_batch_size,
+            batch_size=self.batch_size,
             num_workers=2,
             collate_fn=self.collate_fn,
         )
@@ -202,7 +208,7 @@ class TrafficDataModule(pl.LightningDataModule):
         """
         return DataLoader(
             self.test_dataset,
-            batch_size=self.test_batch_size,
+            batch_size=self.batch_size,
             num_workers=2,
             collate_fn=self.collate_fn,
         )

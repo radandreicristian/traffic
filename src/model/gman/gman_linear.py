@@ -14,8 +14,6 @@ from src.model.gman.gman_blocks import (
     TransformAttention,
 )
 
-from fast_transformers.attention.linear_attention import LinearAttention
-
 
 class LinearSpatialAttention(nn.Module):
     def __init__(
