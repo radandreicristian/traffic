@@ -80,6 +80,7 @@ class Experiment:
         self.run_from_checkpoint = opt.get("from_checkpoint", False)
         self.task_checkpoint = opt.get("clearml_task_id")
 
+
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
         """

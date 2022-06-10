@@ -1,6 +1,6 @@
 import logging
 from collections import Iterable
-from typing import Optional, Callable, Sequence
+from typing import Optional, Callable, Sequence, Tuple
 
 import numpy as np
 import pytorch_lightning as pl
@@ -144,7 +144,7 @@ class TrafficDataModule(pl.LightningDataModule):
         x_signal = torch.stack([self.normalize(x_[..., 0]) for x_ in x]).unsqueeze(
             dim=-1
         )
-        y_signal = torch.stack([self.normalize(y_[..., 0]) for y_ in y]).unsqueeze(
+        y_signal = torch.stack([y_[..., 0] for y_ in y]).unsqueeze(
             dim=-1)
 
         x_temporal = torch.stack([self.onehot_temporal(x_[..., 1:]) for x_ in x])
@@ -161,7 +161,7 @@ class TrafficDataModule(pl.LightningDataModule):
         :return: A tuple containing the x and y tensors.
         """
         x_signal = torch.stack([self.normalize(data.x[..., 0]) for data in batch])
-        y_signal = torch.stack([self.normalize(data.x[..., 0]) for data in batch])
+        y_signal = torch.stack([data.x[..., 0] for data in batch])
 
         x_temporal = torch.stack(
             [self.onehot_temporal(data.x[..., 1:]) for data in batch]
@@ -212,3 +212,6 @@ class TrafficDataModule(pl.LightningDataModule):
             num_workers=2,
             collate_fn=self.collate_fn,
         )
+
+    def get_normalizers(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        return self.train_mean, self.train_std
