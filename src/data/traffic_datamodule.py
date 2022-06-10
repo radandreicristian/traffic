@@ -89,6 +89,8 @@ class TrafficDataModule(pl.LightningDataModule):
         valid_indices = self.sample(valid_indices, "valid")
         test_indices = self.sample(test_indices, "test")
 
+        print(f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}")
+
         self.logger.debug(
             f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}"
         )
@@ -161,7 +163,7 @@ class TrafficDataModule(pl.LightningDataModule):
         :return: A tuple containing the x and y tensors.
         """
         x_signal = torch.stack([self.normalize(data.x[..., 0]) for data in batch])
-        y_signal = torch.stack([data.x[..., 0] for data in batch])
+        y_signal = torch.stack([data.y[..., 0] for data in batch])
 
         x_temporal = torch.stack(
             [self.onehot_temporal(data.x[..., 1:]) for data in batch]

@@ -4,7 +4,7 @@ batch_log_frequency: 100
 ##################################### Data Configuration ##########################################
 
 # The name of the dataset - Either "metr_la" or "pems_bay"
-dataset: pems_bay
+dataset: metr_la
 
 # On-disk loading (like torchvision) or in-memory loading ("mem" or "disk")
 dataset_loading_location: mem
@@ -18,14 +18,14 @@ self_loop_weight: 1.
 
 valid_percentage: .1
 
-test_percentage: .3
+test_percentage: .2
 
 # There's around 32K points - ~20k train, ~6k valid, ~6k test
 sample_dataset: True
 
 # These sampling factors leave 32/32/32 samples in train/valid/test - Just for quick experimentation purposes.
 sample_train_factor: 0.016
-sample_valid_factor: 0.0072
+sample_valid_factor: 1.
 sample_test_factor: 0.0024
 
 batch_size: 8

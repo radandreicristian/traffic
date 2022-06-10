@@ -1,12 +1,19 @@
+import logging
+
 import torch
 import numpy as np
 from torch.nn.functional import l1_loss, mse_loss
 
+logger = logging.getLogger('metrics')
+
 
 def mean_ignore_zeros(tensor, mask):
     nonzero_elements = torch.count_nonzero(mask)
+    if nonzero_elements == 0:
+        logger.warning("Mask full of zero values. Returning zero.")
     tensor_sum = torch.sum(tensor)
-    return tensor_sum / nonzero_elements
+    result = torch.nan_to_num(tensor_sum / nonzero_elements, posinf=0., neginf=0.)
+    return result
 
 
 def make_mask(y_true,
@@ -18,7 +25,7 @@ def make_mask(y_true,
     else:
         # Mask = {False, if y_true == null_value, True if y_true != null_value
         mask = torch.not_equal(y_true, null_value)
-    # Convert to 0-1
+    # Convert to 0. and 1.
     mask = mask.to(torch.float32)
 
     # Put zero where the mask is nan
