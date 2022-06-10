@@ -309,7 +309,7 @@ class Experiment:
         """
         tag = binascii.b2a_hex(os.urandom(3)).decode("utf-8")
         self.task = Task.init(
-            project_name="Graph Diffusion Traffic Forecasting",
+            project_name="Traffic Forecasting - GMAN",
             task_name=f"Train Task {tag}",
             task_type=TaskTypes.training,
             reuse_last_task_id=False,
