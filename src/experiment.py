@@ -10,6 +10,7 @@ import torch.cuda
 from clearml import Task, TaskTypes, Logger
 from omegaconf import DictConfig
 from torch.nn.functional import mse_loss
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInMemory
@@ -80,6 +81,8 @@ class Experiment:
         self.run_from_checkpoint = opt.get("from_checkpoint", False)
         self.task_checkpoint = opt.get("clearml_task_id")
 
+        self.decay_epoch = opt.get("decay_epoch")
+        self.scheduler = None
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -394,6 +397,10 @@ class Experiment:
 
         self.optimizer = optimizer
 
+        self.scheduler = StepLR(self.optimizer,
+                                step_size=self.decay_epoch,
+                                gamma=0.9)
+
     def train(self):
         patience = self.opt["early_stop_patience"]
         early_stopping = EarlyStopping(
@@ -480,6 +487,9 @@ class Experiment:
                 )
                 self.task.update_output_model(self.model_path)
                 break
+
+            self.scheduler.step()
+
         self.logger.info(
             f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_rmse}"
         )
