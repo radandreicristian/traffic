@@ -7,15 +7,6 @@ from torch.nn.functional import l1_loss, mse_loss
 logger = logging.getLogger('metrics')
 
 
-def mean_ignore_zeros(tensor, mask):
-    nonzero_elements = torch.count_nonzero(mask)
-    if nonzero_elements == 0:
-        logger.warning("Mask full of zero values. Returning zero.")
-    tensor_sum = torch.sum(tensor)
-    result = torch.nan_to_num(tensor_sum / nonzero_elements, posinf=0., neginf=0.)
-    return result
-
-
 def make_mask(y_true,
               null_value):
     # If null value is Nan
@@ -27,6 +18,8 @@ def make_mask(y_true,
         mask = torch.not_equal(y_true, null_value)
     # Convert to 0. and 1.
     mask = mask.to(torch.float32)
+
+    mask /= torch.mean(mask)
 
     # Put zero where the mask is nan
     mask = torch.where(torch.isnan(mask), torch.zeros_like(mask), mask)
@@ -41,7 +34,7 @@ def masked_mae(y_true: torch.Tensor,
     mae = torch.abs(y_true - y_pred) * mask
     mae = torch.where(torch.isnan(mae), torch.zeros_like(mae), mae)
 
-    return mean_ignore_zeros(mae, mask).item()
+    return torch.mean(mae).item()
 
 
 def masked_rmse(y_true: torch.Tensor,
@@ -51,7 +44,7 @@ def masked_rmse(y_true: torch.Tensor,
 
     rmse = (y_true - y_pred) ** 2 * mask
     rmse = torch.where(torch.isnan(rmse), torch.zeros_like(rmse), rmse)
-    return torch.sqrt(mean_ignore_zeros(rmse, mask)).item()
+    return torch.sqrt(torch.mean(rmse)).item()
 
 
 def masked_mape(y_true: torch.Tensor,
@@ -61,7 +54,7 @@ def masked_mape(y_true: torch.Tensor,
 
     mape = (torch.abs(y_true - y_pred) / y_true) * mask
     mape = torch.where(torch.isnan(mape), torch.zeros_like(mape), mape)
-    return (mean_ignore_zeros(mape, mask)).item()
+    return torch.mean(mape).item()
 
 
 def masked_mae_loss(y_true: torch.Tensor,
@@ -73,7 +66,7 @@ def masked_mae_loss(y_true: torch.Tensor,
     mae = torch.abs(y_true - y_pred) * mask
     mae = torch.where(torch.isnan(mae), torch.zeros_like(mae), mae)
 
-    return mean_ignore_zeros(mae, mask)
+    return torch.mean(mae)
 
 
 if __name__ == '__main__':
