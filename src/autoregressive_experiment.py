@@ -147,6 +147,12 @@ class AutoregressiveExperiment:
         metrics = {"rmses": rmses, "maes": maes, "mapes": mapes}
         return metrics
 
+    def get_forward_kwargs(self):
+        if self.attention_type == "group":
+            return {"partitions": self.model.get_partitions()}
+        else:
+            return {}
+
     def train_step(
         self, batch: List[Dict[str, torch.Tensor]], use_best_model: bool = False
     ) -> Tuple[torch.tensor, dict]:
@@ -175,7 +181,8 @@ class AutoregressiveExperiment:
             "tgt_features": tgt_features,
             "tgt_interval_of_day": tgt["interval_of_day"],
             "tgt_day_of_week": tgt["day_of_week"],
-            "tgt_spatial_descriptor": self.spatial_range
+            "tgt_spatial_descriptor": self.spatial_range,
+            **self.get_forward_kwargs()
         }
 
         if use_best_model:
@@ -223,7 +230,8 @@ class AutoregressiveExperiment:
             "tgt_features": tgt_features,
             "tgt_interval_of_day": tgt["interval_of_day"],
             "tgt_day_of_week": tgt["day_of_week"],
-            "tgt_spatial_descriptor": self.spatial_range
+            "tgt_spatial_descriptor": self.spatial_range,
+            **self.get_forward_kwargs()
         }
 
         y_hat = self.model(**model_args)
@@ -270,12 +278,12 @@ class AutoregressiveExperiment:
 
         # At the end of this loop y_hat will store P(n-1), F(0), ...F(n-1)
         for i in range(1, self.n_future_steps):
-            y_hat_intermediary = self.best_model(**model_args)
+            y_hat_intermediary = self.best_model(**model_args, is_testing=True)
             y_hat[..., i, :] = y_hat_intermediary[..., i-1, :]
             model_args["tgt_features"] = y_hat
 
         # Forward it one more time (in the auto-encoder fashion) to get F(0),..., F(n)
-        y_hat_intermediary = self.best_model(**model_args)
+        y_hat_intermediary = self.best_model(**model_args, is_testing=True)
         y_hat[..., :-1, :] = y_hat[..., 1:, :]
         y_hat[..., -1, :] = y_hat_intermediary[..., -1, :]
 
@@ -360,19 +368,27 @@ class AutoregressiveExperiment:
         }
 
         model_tag = self.opt["model_type"]
+        self.attention_type = self.opt["attention_type"]
+        attention_kwargs = self.opt["attention_config"].get(self.attention_type, {})
+
         try:
             model_type = models[model_tag]
         except KeyError:
             raise
-        self.model = model_type(
-                d_features=self.opt["d_features"],
-                d_hidden=self.opt["d_hidden"],
-                d_feedforward=self.opt["d_feedforward"],
-                n_heads=self.opt["n_heads"],
-                p_dropout=self.opt["p_dropout"],
-                n_blocks=self.opt["n_blocks"],
-                spatial_seq_len=self.opt["n_nodes"],
-                temporal_seq_len=self.n_future_steps).to(self.device)
+
+        model_kwargs = {
+            "d_features": self.opt["d_features"],
+            "d_hidden": self.opt["d_hidden"],
+            "d_feedforward":self.opt["d_feedforward"],
+            "n_heads":self.opt["n_heads"],
+            "p_dropout":self.opt["p_dropout"],
+            "n_blocks":self.opt["n_blocks"],
+            "spatial_seq_len":self.opt["n_nodes"],
+            "temporal_seq_len":self.n_future_steps,
+            "spatial_attention_type":self.attention_type
+        }
+
+        self.model = model_type(**model_kwargs, **attention_kwargs).to(self.device)
 
         # Todo - Maybe remove the gradients clipping?
         for p in self.model.parameters():
@@ -417,6 +433,8 @@ class AutoregressiveExperiment:
             checkpoint_path=self.model_path, patience=patience
         )
         for epoch in range(self.opt["n_epochs"]):
+            if self.attention_type == "group":
+                self.model.set_partitions()
             train_rmses = []
             train_maes = []
             train_mapes = []

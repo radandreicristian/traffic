@@ -42,6 +42,17 @@ early_stop_patience: 10
 # [adn]
 model_type: adn_base
 
+# [full, group, lsh, favorplus, efficient, linear]
+attention_type: group
+
+attention_config:
+  lsh:
+    bucket_size: 8
+    n_hashes: 8
+  linear:
+    eps: 0.0001
+  linformer:
+    k: 32
 
 linformer_k: 16
 
