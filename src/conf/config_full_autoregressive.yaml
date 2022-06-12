@@ -18,11 +18,11 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-batch_size: 64
+batch_size: 32
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
-n_epochs: 100
+n_epochs: 250
 
 # Optimizer (str, sgd/rmsprop/adam/adamax)
 optimizer: adam
@@ -35,7 +35,7 @@ beta_2: 0.98
 eps: 0.000000001
 
 # Early stopping patience
-early_stop_patience: 10
+early_stop_patience: 25
 
 ##################################### Model Configuration ##########################################
 
