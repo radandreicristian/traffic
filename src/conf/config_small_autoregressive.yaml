@@ -18,7 +18,7 @@ sample_train_factor: 0.016
 sample_valid_factor: 0.0072
 sample_test_factor: 0.0024
 
-batch_size: 8
+batch_size: 4
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
@@ -75,4 +75,4 @@ n_features: 12
 
 d_features: 1
 d_hidden: 32
-d_feedforward: 32
+d_feedforward: 256

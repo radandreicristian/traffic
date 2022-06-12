@@ -14,6 +14,7 @@ from omegaconf import DictConfig
 from torch.nn.functional import l1_loss
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
+import torch.nn as nn
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLaInMemory, PemsBayInMemory
 
@@ -197,6 +198,9 @@ class AutoregressiveExperiment:
         metrics = self.compute_metrics(tgt["raw_features"], y_hat)
 
         loss.backward()
+
+        nn.utils.clip_grad_norm_(self.model.parameters(), 0.1)
+
         self.optimizer.step()
         loss_value = loss.item()
 
@@ -391,8 +395,8 @@ class AutoregressiveExperiment:
         self.model = model_type(**model_kwargs, **attention_kwargs).to(self.device)
 
         # Todo - Maybe remove the gradients clipping?
-        for p in self.model.parameters():
-            p.register_hook(lambda grad: torch.clamp(grad, max=0.1))
+        # for p in self.model.parameters():
+        #    p.register_hook(lambda grad: torch.clamp(grad, max=0.1))
 
     def set_optimizer(
         self, params: Union[Iterable[torch.Tensor], Dict[AnyStr, torch.Tensor]]

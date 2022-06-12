@@ -42,6 +42,8 @@ early_stop_patience: 25
 # [adn_base]
 model_type: adn_base
 
+attention_type: group
+
 attention_config:
   lsh:
     bucket_size: 16
