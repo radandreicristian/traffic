@@ -188,8 +188,8 @@ class Experiment:
                 if not use_best_model
                 else self.best_model(x_signal)
             )
-        loss = masked_mae_loss(y_signal, y_hat)
-
+        # loss = masked_mae_loss(y_signal, y_hat)
+        loss = mse_loss(y_hat, y_signal)
         metrics = self.compute_metrics(y_signal, y_hat)
         del x_signal, y_signal, y_hat, x_temporal, y_temporal
         return loss, metrics
