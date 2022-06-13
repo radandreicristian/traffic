@@ -95,19 +95,13 @@ class TrafficDataModule(pl.LightningDataModule):
             f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}"
         )
         self.train_dataset = Subset(self.dataset, train_indices)
-
-        train_features = torch.stack([x[:, :, 0] for x, _ in self.train_dataset])
-        nonzero = torch.count_nonzero(train_features)
-
-        nonzero_indices = train_features.nonzero(as_tuple=True)
-        nonzero_features = train_features[nonzero_indices].view(-1)
-
-        self.train_mean = torch.sum(train_features) / nonzero
-        self.train_std = torch.sqrt(torch.sum(nonzero_features - self.train_mean) ** 2 /
-                                    nonzero)
-
         self.valid_dataset = Subset(self.dataset, valid_indices)
         self.test_dataset = Subset(self.dataset, test_indices)
+
+        train_features = torch.stack([x[:, :, 0] for x, _ in self.train_dataset])
+
+        self.train_mean = torch.mean(train_features)
+        self.train_std = torch.std(train_features)
 
     @staticmethod
     def onehot_temporal(tensor: torch.Tensor) -> torch.Tensor:
@@ -185,7 +179,6 @@ class TrafficDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=2,
             shuffle=True,
-            pin_memory=True,
             collate_fn=self.collate_fn,
         )
 

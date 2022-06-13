@@ -1,7 +1,7 @@
 import logging
 import sys
 
-formatter = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%d %b, %H:%M")
+formatter = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%H:%M:%s")
 
 stdout_handler = logging.StreamHandler(sys.stdout)
 stdout_handler.setLevel(logging.NOTSET)

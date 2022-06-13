@@ -212,7 +212,6 @@ class Experiment:
         y_hat = y_hat * self.train_std + self.train_mean
         loss = masked_mae_loss(y_hat, y_signal)
         metrics = self.compute_metrics(y_signal, y_hat)
-        del x_signal, y_signal, y_hat, x_temporal, y_temporal
         return loss, metrics
 
     def train_step(

@@ -39,7 +39,7 @@ lr: 1e-3
 # Weight decay (L2 norm)
 weight_decay: 0
 
-decay_epoch: 10
+decay_epoch: 5
 
 # Early stopping patience
 early_stop_patience: 10

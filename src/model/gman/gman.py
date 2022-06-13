@@ -103,3 +103,6 @@ class GraphMultiAttentionNet(nn.Module):
 
         x = torch.squeeze(self.fc_out(x), 3)
         return x
+
+    def __repr__(self):
+        return self.__class__.__name__
