@@ -56,6 +56,47 @@ def masked_mape(y_true: torch.Tensor,
     mape = torch.where(torch.isnan(mape), torch.zeros_like(mape), mape)
     return torch.mean(mape).item()
 
+def unmasked_mae(y_true: torch.Tensor,
+               y_pred: torch.Tensor,
+               null_value=0) -> torch.Tensor:
+
+    mae = torch.abs(y_true - y_pred)
+    mae = torch.where(torch.isnan(mae), torch.zeros_like(mae), mae)
+
+    return torch.mean(mae).item()
+
+
+def unmasked_rmse(y_true: torch.Tensor,
+                y_pred: torch.Tensor,
+                null_value=0) -> torch.Tensor:
+
+    rmse = (y_true - y_pred) ** 2
+    rmse = torch.where(torch.isnan(rmse), torch.zeros_like(rmse), rmse)
+    return torch.sqrt(torch.mean(rmse)).item()
+
+
+def unmasked_mape(y_true: torch.Tensor,
+                y_pred: torch.Tensor,
+                null_value=0) -> torch.Tensor:
+    mask = make_mask(y_true=y_true, null_value=null_value)
+
+    mape = (torch.abs(y_true - y_pred) / y_true) * mask
+    mape = torch.where(torch.isnan(mape), torch.zeros_like(mape), mape)
+    mape = torch.where(torch.isinf(mape), torch.zeros_like(mape), mape)
+    return torch.mean(mape).item()
+
+
+def masked_mae_loss(y_true: torch.Tensor,
+                    y_pred: torch.Tensor,
+                    null_value=0) -> torch.Tensor:
+
+    mask = make_mask(y_true=y_true, null_value=null_value)
+
+    mae = torch.abs(y_true - y_pred) * mask
+    mae = torch.where(torch.isnan(mae), torch.zeros_like(mae), mae)
+
+    return torch.mean(mae)
+
 
 def masked_mae_loss(y_true: torch.Tensor,
                     y_pred: torch.Tensor,

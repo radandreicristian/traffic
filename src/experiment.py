@@ -18,7 +18,7 @@ from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInM
 from src.model.gman.gman_linear import FastLinearGMAN
 from src.model.gman.gatman import GATMAN
 from src.util.masked_metrics import masked_rmse, masked_mae, masked_mape, \
-    masked_mae_loss
+    masked_mae_loss, unmasked_rmse, unmasked_mae, unmasked_mape
 from src.util.utils import get_number_of_nodes
 from src.data.traffic_datamodule import TrafficDataModule
 from src.model import (
@@ -160,6 +160,26 @@ class Experiment:
         metrics = {"rmses": rmses, "maes": maes, "mapes": mapes}
         return metrics
 
+    @staticmethod
+    def compute_unmasked_metrics(y, y_hat):
+        rmses = {
+            k: unmasked_rmse(y[:, v, :], y_hat.detach()[:, v, :])
+            for k, v in indices.items()
+        }
+
+        maes = {
+            k: unmasked_mae(y[:, v, :], y_hat.detach()[:, v, :])
+            for k, v in indices.items()
+        }
+
+        mapes = {
+            k: unmasked_mape(y[:, v, :], y_hat.detach()[:, v, :])
+            for k, v in indices.items()
+        }
+
+        metrics = {"rmses": rmses, "maes": maes, "mapes": mapes}
+        return metrics
+
     def common_step(
         self, batch: List[torch.Tensor], pos_encoding=None, use_best_model: bool = False
     ) -> Tuple[torch.tensor, dict]:
@@ -189,7 +209,8 @@ class Experiment:
                 else self.best_model(x_signal)
             )
         # loss = masked_mae_loss(y_signal, y_hat)
-        loss = mse_loss(y_hat, y_signal)
+        y_hat = y_hat * self.train_std + self.train_mean
+        loss = masked_mae_loss(y_hat, y_signal)
         metrics = self.compute_metrics(y_signal, y_hat)
         del x_signal, y_signal, y_hat, x_temporal, y_temporal
         return loss, metrics
@@ -303,6 +324,7 @@ class Experiment:
         self.test_dataloader = self.datamodule.test_dataloader()
 
         self.opt["n_nodes"] = get_number_of_nodes(self.dataset, self.opt)
+        self.train_mean, self.train_std = self.datamodule.get_normalizers()
 
     def setup_new(self):
         """
