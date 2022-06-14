@@ -80,19 +80,12 @@ class TrafficDataModule(pl.LightningDataModule):
         print(f"Samples: {len(train_indices)}/{len(valid_indices)}/{len(test_indices)}")
 
         self.train_dataset = KeyedSubset(self.dataset, train_indices)
-
-        train_features = torch.stack([x["features"][:, :] for x, _ in self.train_dataset])
-        nonzero = torch.count_nonzero(train_features)
-
-        nonzero_indices = train_features.nonzero(as_tuple=True)
-        nonzero_features = train_features[nonzero_indices].view(-1)
-
-        self.train_mean = torch.sum(train_features) / nonzero
-        self.train_std = torch.sqrt(torch.sum(nonzero_features - self.train_mean) ** 2 /
-                                    nonzero)
-
         self.valid_dataset = KeyedSubset(self.dataset, valid_indices)
         self.test_dataset = KeyedSubset(self.dataset, test_indices)
+
+        train_features = torch.stack([x["features"][:, :] for x, _ in self.train_dataset])
+        self.train_mean = torch.mean(train_features)
+        self.train_std = torch.std(train_features)
 
     @staticmethod
     def onehot_day_of_week(tensor: torch.Tensor) -> torch.Tensor:
