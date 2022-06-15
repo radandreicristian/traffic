@@ -28,7 +28,6 @@ import os
 import binascii
 from src.util.masked_metrics import masked_mae, masked_mape, masked_rmse, masked_mae_loss
 
-
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 
 
@@ -173,15 +172,18 @@ class AutoregressiveExperiment:
         # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
         tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
                                   tgt["features"][..., :-1, :]), dim=-2)
-
+        tgt_interval_of_day = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
+                                         tgt["features"][..., :-1, :]), dim=-2)
+        tgt_day_of_week = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
+                                     tgt["features"][..., :-1, :]), dim=-2)
         model_args = {
             "src_features": src_features,
             "src_interval_of_day": src["interval_of_day"],
             "src_day_of_week": src["day_of_week"],
             "src_spatial_descriptor": self.spatial_range,
             "tgt_features": tgt_features,
-            "tgt_interval_of_day": tgt["interval_of_day"],
-            "tgt_day_of_week": tgt["day_of_week"],
+            "tgt_interval_of_day": tgt_interval_of_day,
+            "tgt_day_of_week": tgt_day_of_week,
             "tgt_spatial_descriptor": self.spatial_range,
             **self.get_forward_kwargs()
         }
@@ -225,19 +227,21 @@ class AutoregressiveExperiment:
         # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
         tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
                                   tgt["features"][..., :-1, :]), dim=-2)
-
+        tgt_interval_of_day = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
+                                         tgt["features"][..., :-1, :]), dim=-2)
+        tgt_day_of_week = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
+                                     tgt["features"][..., :-1, :]), dim=-2)
         model_args = {
             "src_features": src_features,
             "src_interval_of_day": src["interval_of_day"],
             "src_day_of_week": src["day_of_week"],
             "src_spatial_descriptor": self.spatial_range,
             "tgt_features": tgt_features,
-            "tgt_interval_of_day": tgt["interval_of_day"],
-            "tgt_day_of_week": tgt["day_of_week"],
+            "tgt_interval_of_day": tgt_interval_of_day,
+            "tgt_day_of_week": tgt_day_of_week,
             "tgt_spatial_descriptor": self.spatial_range,
             **self.get_forward_kwargs()
         }
-
         y_hat = self.model(**model_args)
 
         # De-normalize
@@ -267,6 +271,10 @@ class AutoregressiveExperiment:
         # Autoregressive mode - The initial tensor is
         y_hat = torch.zeros((batch_size, self.opt["n_nodes"],
                              self.n_future_steps, 1)).to(self.device)
+        tgt_interval_of_day = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
+                                         tgt["features"][..., :-1, :]), dim=-2)
+        tgt_day_of_week = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
+                                     tgt["features"][..., :-1, :]), dim=-2)
 
         y_hat[..., 0, :] = src_features[..., -1, :]
         model_args = {
@@ -275,18 +283,19 @@ class AutoregressiveExperiment:
             "src_day_of_week": src["day_of_week"],
             "src_spatial_descriptor": self.spatial_range,
             "tgt_features": y_hat,
-            "tgt_interval_of_day": tgt["interval_of_day"],
-            "tgt_day_of_week": tgt["day_of_week"],
+            "tgt_interval_of_day": tgt_interval_of_day,
+            "tgt_day_of_week": tgt_day_of_week,
             "tgt_spatial_descriptor": self.spatial_range
         }
 
-        # At the end of this loop y_hat will store P(n-1), F(0), ...F(n-1)
+        # At the end of this loop y_hat will be P11, F0, ..., F10
         for i in range(1, self.n_future_steps):
             y_hat_intermediary = self.best_model(**model_args, is_testing=True)
             y_hat[..., i, :] = y_hat_intermediary[..., i-1, :]
             model_args["tgt_features"] = y_hat
 
-        # Forward it one more time (in the auto-encoder fashion) to get F(0),..., F(n)
+        # Forward it one more time to get F11 on the last output position. Shift to
+        # left and then add the last output
         y_hat_intermediary = self.best_model(**model_args, is_testing=True)
         y_hat[..., :-1, :] = y_hat[..., 1:, :]
         y_hat[..., -1, :] = y_hat_intermediary[..., -1, :]
