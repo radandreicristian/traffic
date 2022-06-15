@@ -259,7 +259,10 @@ class AutoregressiveExperiment:
         return loss_value, metrics
 
     @torch.no_grad()
-    def test_step(self, batch: List[Dict[str, torch.Tensor]]) -> Tuple[torch.tensor, dict]:
+    def test_step(self,
+                  batch: List[Dict[str, torch.Tensor]],
+                  use_best_model: bool
+                  ) -> Tuple[torch.tensor, dict]:
         """
         A single evaluation (valid/test) step, including forward, loss and backward pass for a batch.
 
@@ -268,6 +271,8 @@ class AutoregressiveExperiment:
         """
         src, tgt = batch
         src_features = src["features"]
+
+        model = self.best_model if use_best_model else self.model
 
         batch_size, _, _, _ = src_features.size()
         # Autoregressive mode - The initial tensor is
@@ -293,13 +298,13 @@ class AutoregressiveExperiment:
 
         # At the end of this loop y_hat will be P11, F0, ..., F10
         for i in range(1, self.n_future_steps):
-            y_hat_intermediary = self.best_model(**model_args, is_testing=True)
+            y_hat_intermediary = model(**model_args, is_testing=True)
             y_hat[..., i, :] = y_hat_intermediary[..., i-1, :]
             model_args["tgt_features"] = y_hat
 
         # Forward it one more time to get F11 on the last output position. Shift to
         # left and then add the last output
-        y_hat_intermediary = self.best_model(**model_args, is_testing=True)
+        y_hat_intermediary = model(**model_args, is_testing=True)
         y_hat[..., :-1, :] = y_hat[..., 1:, :]
         y_hat[..., -1, :] = y_hat_intermediary[..., -1, :]
 
@@ -495,7 +500,7 @@ class AutoregressiveExperiment:
 
             for idx, batch in enumerate(self.valid_dataloader):
                 batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
-                loss, metrics = self.valid_step(batch=batch)
+                loss, metrics = self.test_step(batch=batch, use_best_model=False)
 
                 valid_losses.append(loss)
                 valid_rmses.append(metrics["rmses"])
@@ -548,7 +553,7 @@ class AutoregressiveExperiment:
         test_mapes = []
         for idx, batch in enumerate(self.test_dataloader):
             batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
-            _, metrics = self.test_step(batch=batch)
+            _, metrics = self.test_step(batch=batch, use_best_model=True)
             test_rmses.append(metrics["rmses"])
             test_maes.append(metrics["maes"])
             test_mapes.append(metrics["mapes"])
