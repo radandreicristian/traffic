@@ -172,10 +172,10 @@ class AutoregressiveExperiment:
         # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
         tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
                                   tgt["features"][..., :-1, :]), dim=-2)
-        tgt_interval_of_day = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                         tgt["features"][..., :-1, :]), dim=-2)
-        tgt_day_of_week = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                     tgt["features"][..., :-1, :]), dim=-2)
+        tgt_interval_of_day = torch.cat((src["interval_of_day"][..., -1, :].unsqueeze(-2),
+                                         tgt["interval_of_day"][..., :-1, :]), dim=-2)
+        tgt_day_of_week = torch.cat((src["day_of_week"][..., -1, :].unsqueeze(-2),
+                                     tgt["day_of_week"][..., :-1, :]), dim=-2)
         model_args = {
             "src_features": src_features,
             "src_interval_of_day": src["interval_of_day"],
@@ -227,10 +227,12 @@ class AutoregressiveExperiment:
         # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
         tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
                                   tgt["features"][..., :-1, :]), dim=-2)
-        tgt_interval_of_day = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                         tgt["features"][..., :-1, :]), dim=-2)
-        tgt_day_of_week = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                     tgt["features"][..., :-1, :]), dim=-2)
+        tgt_interval_of_day = torch.cat(
+            (src["interval_of_day"][..., -1, :].unsqueeze(-2),
+             tgt["interval_of_day"][..., :-1, :]), dim=-2)
+        tgt_day_of_week = torch.cat((src["day_of_week"][..., -1, :].unsqueeze(-2),
+                                     tgt["day_of_week"][..., :-1, :]), dim=-2)
+
         model_args = {
             "src_features": src_features,
             "src_interval_of_day": src["interval_of_day"],
@@ -271,10 +273,11 @@ class AutoregressiveExperiment:
         # Autoregressive mode - The initial tensor is
         y_hat = torch.zeros((batch_size, self.opt["n_nodes"],
                              self.n_future_steps, 1)).to(self.device)
-        tgt_interval_of_day = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                         tgt["features"][..., :-1, :]), dim=-2)
-        tgt_day_of_week = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                     tgt["features"][..., :-1, :]), dim=-2)
+
+        tgt_interval_of_day = torch.cat((src["interval_of_day"][..., -1, :].unsqueeze(-2),
+                                         tgt["interval_of_day"][..., :-1, :]), dim=-2)
+        tgt_day_of_week = torch.cat((src["day_of_week"][..., -1, :].unsqueeze(-2),
+                                     tgt["day_of_week"][..., :-1, :]), dim=-2)
 
         y_hat[..., 0, :] = src_features[..., -1, :]
         model_args = {
