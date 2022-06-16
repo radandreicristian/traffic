@@ -17,6 +17,7 @@ from src.model.gman.gman_blocks import (
 class FastSelfAttention(nn.Module):
     def __init__(self,
                  d_hidden: int,
+                 d_hidden_feat: int,
                  n_heads: int,
                  p_dropout: int,
                  eps=0.001
@@ -26,7 +27,8 @@ class FastSelfAttention(nn.Module):
         self.n_heads = n_heads
         self.d_head = d_hidden // n_heads
         self.eps = eps
-        self.to_qkv = nn.Linear(in_features=3 * d_hidden, out_features=3 * d_hidden,
+        self.to_qkv = nn.Linear(in_features=3 * d_hidden,
+                                out_features=3 * d_hidden_feat,
                                 bias=False)
 
     @staticmethod
@@ -71,10 +73,11 @@ class FastSpatialAttention(nn.Module):
         self.n_heads = n_heads
         self.n_nodes = n_nodes
         self.linear_self_attention = FastSelfAttention(
-            d_hidden=self.d_hidden, n_heads=self.n_heads, p_dropout=p_dropout
+            d_hidden=self.d_hidden, d_hidden_feat=d_hidden_feat,
+            n_heads=self.n_heads, p_dropout=p_dropout
         )
 
-        self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
+        self.fc_out = nn.Linear(in_features=d_hidden_feat, out_features=d_hidden_feat)
 
     def forward(self, x: torch.Tensor, ste):
         b, l, n, d = x.shape
