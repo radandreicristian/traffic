@@ -72,8 +72,6 @@ class LshSpatialAttention(nn.Module):
             d_hidden=self.d_hidden, n_heads=self.n_heads, p_dropout=p_dropout
         )
 
-        self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
-
     def forward(self, x: torch.Tensor, ste):
         b, l, n, d = x.shape
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
@@ -81,7 +79,7 @@ class LshSpatialAttention(nn.Module):
         h = rearrange(h, "b l n d -> (b l) n d")
         h = self.linear_self_attention(h)
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return self.fc_out(h)
+        return h
 
 
 class FastSpatioTemporalBlock(nn.Module):
