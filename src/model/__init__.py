@@ -5,7 +5,7 @@ __all__ = [
     "OdeNet",
     "GraphMultiAttentionNetOde",
     "EGCNet",
-    "LinearGMAN",
+    "LinformerGMAN",
     "BaseGNN",
     "EfficientGMAN",
     "FavorPlusGMAN",
@@ -16,7 +16,7 @@ from .gdr_net import GraphDiffusionRecurrentNet
 from .lgdr_net import LatentGraphDiffusionRecurrentNet
 from .ode_net import OdeNet
 
-from .gman.gman_linformer import LinearGMAN
+from .gman.gman_linformer import LinformerGMAN
 from .gman.gman import GraphMultiAttentionNet
 from .gman.gman_ode import GraphMultiAttentionNetOde
 from .gman.egcnet import EGCNet

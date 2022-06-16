@@ -89,11 +89,11 @@ class LinearSpatioTemporalBlock(nn.Module):
         return x + h
 
 
-class LinearGMAN(nn.Module):
+class LinformerGMAN(nn.Module):
     def __init__(
         self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(LinearGMAN, self).__init__()
+        super(LinformerGMAN, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")

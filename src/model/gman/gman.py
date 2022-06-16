@@ -69,7 +69,7 @@ class GraphMultiAttentionNet(nn.Module):
             in_features=[self.d_hidden, self.d_hidden],
             out_features=[self.d_hidden, 1],
             activations=[f.relu, None],
-            bn_decay=self.bn_decay,
+            bn_decay=self.bn_decay, 
         )
 
     def forward(

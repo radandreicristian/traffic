@@ -15,8 +15,10 @@ from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInMemory
 
-from src.model.gman.gman_linear import FastLinearGMAN
+from src.model.gman.gman_fast import FastGMAN
+from src.model.gman.gman_linformer import LinformerGMAN
 from src.model.gman.gatman import GATMAN
+from src.model.gman.gman_lsh import LshGMAN
 from src.util.masked_metrics import masked_rmse, masked_mae, masked_mape, \
     masked_mae_loss, unmasked_rmse, unmasked_mae, unmasked_mape
 from src.util.utils import get_number_of_nodes
@@ -28,7 +30,7 @@ from src.model import (
     GraphDiffusionRecurrentNet,
     GraphMultiAttentionNetOde,
     EGCNet,
-    LinearGMAN,
+    LinformerGMAN,
     EfficientGMAN,
     FavorPlusGMAN,
 )
@@ -364,10 +366,11 @@ class Experiment:
             "gman2": GraphMultiAttentionNetOde,
             "gatman": GATMAN,
             "egcnet": EGCNet,
-            "gman_linear": LinearGMAN,
+            "gman_linformer": LinformerGMAN,
             "gman_efficient": EfficientGMAN,
             "gman_favor": FavorPlusGMAN,
-            "gman_fast": FastLinearGMAN
+            "gman_fast": FastGMAN,
+            "gman_lsh": LshGMAN
         }
 
         non_temporal_augmented_models = ["lgdr", "gdr", "ode"]

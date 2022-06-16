@@ -13,45 +13,44 @@ from src.model.gman.gman_blocks import (
     TransformAttention,
 )
 
+from reformer_pytorch import LSHSelfAttention
 
-class EfficientSelfAttention(nn.Module):
+
+class LshSelfAttention(nn.Module):
     def __init__(self,
                  d_hidden: int,
                  n_heads: int,
-                 p_dropout: int,
-                 **kwargs
+                 p_dropout: float,
+                 use_mask: bool = False,
+                 bucket_size: int = 16,
+                 n_hashes: int = 4
                  ):
-        super(EfficientSelfAttention, self).__init__()
+        super(LshSelfAttention, self).__init__()
         assert d_hidden % n_heads == 0, "Hidden dimension must be divisible by n_heads."
-        self.n_heads = n_heads
-        self.d_head = d_hidden // n_heads
 
-        self.to_qkv = nn.Linear(in_features=3 * d_hidden, out_features=3 * d_hidden,
-                                bias=False)
+        self.bucket_size = bucket_size
+        self.n_hashes = n_hashes
+        self.lsh_attention = LSHSelfAttention(dim=d_hidden,
+                                              heads=n_heads,
+                                              bucket_size=bucket_size,
+                                              n_hashes=n_hashes,
+                                              causal=False)
 
-        # Original scale in transformers is s = 1/sqrt(n) = n ** -0.5. Here,
-        # the scale is sqrt(s) = n ** -0.25
-        self.scale = self.d_head ** -0.25
-        self.fc_out = nn.Linear(in_features=d_hidden, out_features=d_hidden)
+    def forward(self, x: torch.Tensor):
+        # x (b, l, d)
+        b, l, d = x.shape
 
-    def forward(self, x):
-        q, k, v = map(
-            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.n_heads),
-            (self.query(x), self.key(x), self.value(x)),
-        )
+        # Seq len must be divisble with 2*bucket_size. Pad to match lens
+        padding = 2 * self.bucket_size - l % (2 * self.bucket_size)
 
-        q = q.softmax(dim=-1) * self.scale
-        k = q.softmax(dim=-2) * self.scale
-
-        context_vectors = k.transpose(-1, -2) @ v
-        attention = q @ context_vectors
-
-        attention = rearrange(attention, "b h n d -> b n (h d)")
-
-        return self.to_out(attention)
+        if padding != 0:
+            pad_tensor = torch.zeros((b, padding, d)).to(x.device)
+            x = torch.cat([x, pad_tensor], dim=-2)
+        x = self.lsh_attention(x)
+        return x[:, :-padding, :]
 
 
-class LinearSpatialAttention(nn.Module):
+class LshSpatialAttention(nn.Module):
     def __init__(
             self,
             d_hidden_feat,
@@ -60,7 +59,7 @@ class LinearSpatialAttention(nn.Module):
             n_nodes,
             p_dropout,
     ) -> None:
-        super(LinearSpatialAttention, self).__init__()
+        super(LshSpatialAttention, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
 
         assert self.d_hidden % n_heads == 0, (
@@ -69,7 +68,7 @@ class LinearSpatialAttention(nn.Module):
 
         self.n_heads = n_heads
         self.n_nodes = n_nodes
-        self.linear_self_attention = EfficientSelfAttention(
+        self.linear_self_attention = LshSelfAttention(
             d_hidden=self.d_hidden, n_heads=self.n_heads, p_dropout=p_dropout
         )
 
@@ -82,22 +81,22 @@ class LinearSpatialAttention(nn.Module):
         h = rearrange(h, "b l n d -> (b l) n d")
         h = self.linear_self_attention(h)
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return f.relu(self.fc_out(h))
+        return self.fc_out(h)
 
 
-class LinearSpatioTemporalBlock(nn.Module):
+class FastSpatioTemporalBlock(nn.Module):
     def __init__(
-            self,
-            n_heads,
-            d_hidden,
-            d_hidden_pos,
-            bn_decay,
-            n_nodes,
-            p_dropout,
+        self,
+        n_heads,
+        d_hidden,
+        d_hidden_pos,
+        bn_decay,
+        n_nodes,
+        p_dropout,
     ):
-        super(LinearSpatioTemporalBlock, self).__init__()
+        super(FastSpatioTemporalBlock, self).__init__()
 
-        self.spatial_attention = LinearSpatialAttention(
+        self.spatial_attention = LshSpatialAttention(
             d_hidden_feat=d_hidden,
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
@@ -121,11 +120,11 @@ class LinearSpatioTemporalBlock(nn.Module):
         return x + h
 
 
-class EfficientGMAN(nn.Module):
+class LshGMAN(nn.Module):
     def __init__(
-            self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
+        self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(EfficientGMAN, self).__init__()
+        super(LshGMAN, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")
@@ -148,7 +147,7 @@ class EfficientGMAN(nn.Module):
         self.p_dropout = opt.get("p_dropout_model")
         self.encoder = nn.ModuleList(
             [
-                LinearSpatioTemporalBlock(
+                FastSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
@@ -164,7 +163,7 @@ class EfficientGMAN(nn.Module):
         )
         self.decoder = nn.ModuleList(
             [
-                LinearSpatioTemporalBlock(
+                FastSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
@@ -191,8 +190,7 @@ class EfficientGMAN(nn.Module):
         )
 
     def forward(
-            self, x_signal: torch.Tensor, x_temporal: torch.Tensor,
-            y_temporal: torch.Tensor
+        self, x_signal: torch.Tensor, x_temporal: torch.Tensor, y_temporal: torch.Tensor
     ) -> Tensor:
         # x_signal: (batch_size, n_previous, n_nodes, 1)
         # x_temporal: (batch_size, n_previous, n_nodes, 2)
