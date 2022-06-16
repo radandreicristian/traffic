@@ -29,14 +29,6 @@ class FastSelfAttention(nn.Module):
         self.to_qkv = nn.Linear(in_features=3 * d_hidden, out_features=3 * d_hidden,
                                 bias=False)
 
-        if n_heads == 1:
-            self.to_out = nn.Identity()
-        else:
-            self.to_out = nn.Sequential(
-                nn.Linear(in_features=d_hidden, out_features=d_hidden),
-                nn.Dropout(p=p_dropout),
-            )
-
     @staticmethod
     def elu_feature_kernel(x):
         return f.elu(x) + 1
@@ -57,7 +49,7 @@ class FastSelfAttention(nn.Module):
         v = torch.einsum("nlhd,nhmd,nlh->nlhm", q, kv, z)
 
         v = rearrange(v, 'b l h d -> b l (h d)')
-        return self.to_out(v)
+        return v
 
 
 class FastSpatialAttention(nn.Module):
