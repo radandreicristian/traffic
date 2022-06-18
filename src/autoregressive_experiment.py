@@ -153,6 +153,40 @@ class AutoregressiveExperiment:
         else:
             return {}
 
+    def autoencoder_step(
+            self, batch: List[Dict[str, torch.Tensor]], use_best_model: bool = False
+        ) -> Tuple[torch.tensor, dict]:
+
+        src_dict, tgt_dict = batch
+        src = src_dict["features"]
+        tgt = tgt_dict["features"]
+
+        # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
+        tgt_inp = torch.cat((src[..., -1, :].unsqueeze(-2),
+                             tgt[..., :-1, :]), dim=-2)
+
+        model_args = {
+            "src_features": src,
+            "src_interval_of_day": src_dict["interval_of_day"],
+            "src_day_of_week": src_dict["day_of_week"],
+            "src_spatial_descriptor": self.spatial_range,
+            "tgt_features": tgt_inp,
+            "tgt_interval_of_day": tgt_dict["interval_of_day"],
+            "tgt_day_of_week": tgt_dict["day_of_week"],
+            "tgt_spatial_descriptor": self.spatial_range,
+            **self.get_forward_kwargs()
+        }
+
+        tgt_out = self.model(**model_args)
+
+        # De-normalize
+        tgt_out = tgt_out * self.train_std + self.train_mean
+
+        loss = masked_mae_loss(tgt_dict["raw_features"], tgt_out)
+        metrics = self.compute_metrics(tgt_dict["raw_features"], tgt_out)
+
+        return loss, metrics
+
     def train_step(
         self, batch: List[Dict[str, torch.Tensor]], use_best_model: bool = False
     ) -> Tuple[torch.tensor, dict]:
@@ -166,39 +200,7 @@ class AutoregressiveExperiment:
         self.model.train()
         self.optimizer.zero_grad()
 
-        src, tgt = batch
-        src_features = src["features"]
-
-        # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
-        tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                  tgt["features"][..., :-1, :]), dim=-2)
-        tgt_interval_of_day = torch.cat((src["interval_of_day"][..., -1, :].unsqueeze(-2),
-                                         tgt["interval_of_day"][..., :-1, :]), dim=-2)
-        tgt_day_of_week = torch.cat((src["day_of_week"][..., -1, :].unsqueeze(-2),
-                                     tgt["day_of_week"][..., :-1, :]), dim=-2)
-        model_args = {
-            "src_features": src_features,
-            "src_interval_of_day": src["interval_of_day"],
-            "src_day_of_week": src["day_of_week"],
-            "src_spatial_descriptor": self.spatial_range,
-            "tgt_features": tgt_features,
-            "tgt_interval_of_day": tgt_interval_of_day,
-            "tgt_day_of_week": tgt_day_of_week,
-            "tgt_spatial_descriptor": self.spatial_range,
-            **self.get_forward_kwargs()
-        }
-
-        if use_best_model:
-            y_hat = self.best_model(**model_args)
-        else:
-            y_hat = self.model(**model_args)
-
-        # De-normalize
-        y_hat = y_hat * self.train_std + self.train_mean
-
-        loss = masked_mae_loss(tgt["raw_features"], y_hat)
-        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
-
+        loss, metrics = self.autoencoder_step(batch=batch)
         loss.backward()
 
         nn.utils.clip_grad_norm_(self.model.parameters(), 0.1)
@@ -218,39 +220,7 @@ class AutoregressiveExperiment:
         :param batch: A tensor containing a batch of input data.
         :return: A tuple containing the loss and the metrics.
         """
-        self.model.train()
-        self.optimizer.zero_grad()
-
-        src, tgt = batch
-        src_features = src["features"]
-
-        # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
-        tgt_features = torch.cat((src["features"][..., -1, :].unsqueeze(-2),
-                                  tgt["features"][..., :-1, :]), dim=-2)
-        tgt_interval_of_day = torch.cat(
-            (src["interval_of_day"][..., -1, :].unsqueeze(-2),
-             tgt["interval_of_day"][..., :-1, :]), dim=-2)
-        tgt_day_of_week = torch.cat((src["day_of_week"][..., -1, :].unsqueeze(-2),
-                                     tgt["day_of_week"][..., :-1, :]), dim=-2)
-
-        model_args = {
-            "src_features": src_features,
-            "src_interval_of_day": src["interval_of_day"],
-            "src_day_of_week": src["day_of_week"],
-            "src_spatial_descriptor": self.spatial_range,
-            "tgt_features": tgt_features,
-            "tgt_interval_of_day": tgt_interval_of_day,
-            "tgt_day_of_week": tgt_day_of_week,
-            "tgt_spatial_descriptor": self.spatial_range,
-            **self.get_forward_kwargs()
-        }
-        y_hat = self.model(**model_args)
-
-        # De-normalize
-        y_hat = y_hat * self.train_std + self.train_mean
-
-        loss = masked_mae_loss(tgt["raw_features"], y_hat)
-        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
+        loss, metrics = self.autoencoder_step(batch=batch)
 
         loss_value = loss.item()
 
@@ -269,49 +239,41 @@ class AutoregressiveExperiment:
         :param batch: A tensor containing a batch of input data.
         :return: A tuple containing the loss and the RMSEs.
         """
-        src, tgt = batch
-        src_features = src["features"]
+        src_dict, tgt_dict = batch
 
-        model = self.best_model if use_best_model else self.model
+        src = src_dict["features"]
 
-        batch_size, _, _, _ = src_features.size()
-        # Autoregressive mode - The initial tensor is
-        y_hat = torch.zeros((batch_size, self.opt["n_nodes"],
-                             self.n_future_steps, 1)).to(self.device)
+        # Initialize the decoder input as a sequence of zeros of MAX_LEN (12)
+        tgt_inp = torch.zeros_like(src)
 
-        tgt_interval_of_day = torch.cat((src["interval_of_day"][..., -1, :].unsqueeze(-2),
-                                         tgt["interval_of_day"][..., :-1, :]), dim=-2)
-        tgt_day_of_week = torch.cat((src["day_of_week"][..., -1, :].unsqueeze(-2),
-                                     tgt["day_of_week"][..., :-1, :]), dim=-2)
+        # Place P11 on first position in decoder input
+        tgt_inp[..., 0, :] = src[..., -1, :]
 
-        y_hat[..., 0, :] = src_features[..., -1, :]
         model_args = {
-            "src_features": src_features,
-            "src_interval_of_day": src["interval_of_day"],
-            "src_day_of_week": src["day_of_week"],
+            "src_features": src,
+            "src_interval_of_day": src_dict["interval_of_day"],
+            "src_day_of_week": src_dict["day_of_week"],
             "src_spatial_descriptor": self.spatial_range,
-            "tgt_features": y_hat,
-            "tgt_interval_of_day": tgt_interval_of_day,
-            "tgt_day_of_week": tgt_day_of_week,
-            "tgt_spatial_descriptor": self.spatial_range
+            "tgt_features": tgt_inp,
+            "tgt_interval_of_day": tgt_dict["interval_of_day"],
+            "tgt_day_of_week": tgt_dict["day_of_week"],
+            "tgt_spatial_descriptor": self.spatial_range,
+            **self.get_forward_kwargs()
         }
 
-        # At the end of this loop y_hat will be P11, F0, ..., F10
-        for i in range(1, self.n_future_steps):
-            y_hat_intermediary = model(**model_args, is_testing=True)
-            y_hat[..., i, :] = y_hat_intermediary[..., i-1, :]
-            model_args["tgt_features"] = y_hat
+        for i in range(1, 12):
+            tgt_out = self.best_model(**model_args)
+            tgt_inp[..., i, :] = tgt_out[..., i, :]
+            model_args["tgt_features"] = tgt_inp
 
-        # Forward it one more time to get F11 on the last output position. Shift to
-        # left and then add the last output
-        y_hat_intermediary = model(**model_args, is_testing=True)
-        y_hat[..., :-1, :] = y_hat[..., 1:, :]
-        y_hat[..., -1, :] = y_hat_intermediary[..., -1, :]
+        tgt_out = self.best_model(**model_args)
 
-        y_hat = y_hat * self.train_std + self.train_mean
+        result = torch.cat((tgt_inp[..., 1:, :], tgt_out[..., -1, :].unsqueeze(-2)),
+                           dim=-2)
+        result = result * self.train_std + self.train_mean
 
-        loss = masked_mae_loss(tgt["raw_features"], y_hat)
-        metrics = self.compute_metrics(tgt["raw_features"], y_hat)
+        metrics = self.compute_metrics(tgt_dict["raw_features"], result)
+        loss = masked_mae_loss(tgt_dict["raw_features"], result)
 
         loss_value = loss.item()
 
@@ -500,7 +462,7 @@ class AutoregressiveExperiment:
 
             for idx, batch in enumerate(self.valid_dataloader):
                 batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
-                loss, metrics = self.test_step(batch=batch, use_best_model=False)
+                loss, metrics = self.valid_step(batch=batch)
 
                 valid_losses.append(loss)
                 valid_rmses.append(metrics["rmses"])

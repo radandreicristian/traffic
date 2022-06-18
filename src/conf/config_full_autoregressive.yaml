@@ -42,7 +42,7 @@ early_stop_patience: 25
 # [adn_base]
 model_type: adn_base
 
-attention_type: group
+attention_type: full
 
 attention_config:
   lsh:
