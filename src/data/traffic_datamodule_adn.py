@@ -24,6 +24,7 @@ class TrafficDataModule(pl.LightningDataModule):
         self.opt = opt
         self.dataset = dataset
         self.batch_size = opt["batch_size"]
+        self.normalize_all = opt.get("normalize_all", False)
 
         self.train_dataset: Optional[Dataset] = None
         self.valid_dataset: Optional[Dataset] = None
