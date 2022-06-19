@@ -1,32 +1,30 @@
+import binascii
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
 
-from adn import ADN
-from clearml.logger import StdStreamPatch
 import numpy as np
 import pytorch_lightning as pl
 import torch.cuda
+import torch.nn as nn
+from adn import ADN
 from clearml import Task, TaskTypes, Logger
+from clearml.logger import StdStreamPatch
 from einops import repeat
 from omegaconf import DictConfig
-from torch.nn.functional import l1_loss
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
-import torch.nn as nn
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLaInMemory, PemsBayInMemory
 
-from src.util.utils import get_number_of_nodes_autoregressive
 from src.data.traffic_datamodule_adn import TrafficDataModule
-
 from src.util.constants import *
 from src.util.earlystopping import EarlyStopping
-
-import os
-import binascii
-from src.util.masked_metrics import masked_mae, masked_mape, masked_rmse, masked_mae_loss
+from src.util.masked_metrics import masked_mae, masked_mape, masked_rmse, \
+    masked_mae_loss
+from src.util.utils import get_number_of_nodes_autoregressive
 
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 
@@ -130,17 +128,17 @@ class AutoregressiveExperiment:
     @staticmethod
     def compute_metrics(y, y_hat):
         rmses = {
-            k: masked_rmse(y[:, v, :], y_hat.detach()[:, v, :])
+            k: masked_rmse(y[:, :, v, :], y_hat.detach()[:, :, v, :])
             for k, v in indices.items()
         }
 
         maes = {
-            k: masked_mae(y[:, v, :], y_hat.detach()[:, v, :])
+            k: masked_mae(y[:, :, v, :], y_hat.detach()[:, :, v, :])
             for k, v in indices.items()
         }
 
         mapes = {
-            k: masked_mape(y[:, v, :], y_hat.detach()[:, v, :])
+            k: masked_mape(y[:, :, v, :], y_hat.detach()[:, :, v, :])
             for k, v in indices.items()
         }
 
@@ -158,10 +156,15 @@ class AutoregressiveExperiment:
         ) -> Tuple[torch.tensor, dict]:
 
         src_dict, tgt_dict = batch
+
+        # src (B, N, T, 1)
         src = src_dict["features"]
+
+        # tgt (B, N, T, 1)
         tgt = tgt_dict["features"]
 
         # Feed [P11, F0, ..., F10] to predict [F0, ..., F11]
+        # Concatenate (B, N, 1, 1) with (B, N, T-1, 1)
         tgt_inp = torch.cat((src[..., -1, :].unsqueeze(-2),
                              tgt[..., :-1, :]), dim=-2)
 
@@ -180,10 +183,14 @@ class AutoregressiveExperiment:
         tgt_out = self.model(**model_args)
 
         # De-normalize
-        tgt_out = tgt_out * self.train_std + self.train_mean
+        tgt_out_denormalized = tgt_out * self.train_std + self.train_mean
 
-        loss = masked_mae_loss(tgt_dict["raw_features"], tgt_out)
-        metrics = self.compute_metrics(tgt_dict["raw_features"], tgt_out)
+        loss = masked_mae_loss(tgt_dict["raw_features"], tgt_out_denormalized)
+        # loss = l1_loss(tgt_dict["features"], tgt_out)
+        # loss = l1_loss(tgt_dict["raw_features"], tgt_out_denorm)
+        # loss = masked_mae_loss(tgt_dict["features"], tgt_out)
+        print(tgt_out_denormalized.shape)
+        metrics = self.compute_metrics(tgt_dict["raw_features"], tgt_out_denormalized)
 
         return loss, metrics
 
@@ -365,14 +372,16 @@ class AutoregressiveExperiment:
         model_kwargs = {
             "d_features": self.opt["d_features"],
             "d_hidden": self.opt["d_hidden"],
-            "d_feedforward":self.opt["d_feedforward"],
-            "n_heads":self.opt["n_heads"],
-            "p_dropout":self.opt["p_dropout"],
-            "n_blocks":self.opt["n_blocks"],
-            "spatial_seq_len":self.opt["n_nodes"],
-            "temporal_seq_len":self.n_future_steps,
-            "spatial_attention_type":self.attention_type
+            "d_feedforward": self.opt["d_feedforward"],
+            "n_heads": self.opt["n_heads"],
+            "p_dropout": self.opt["p_dropout"],
+            "n_blocks": self.opt["n_blocks"],
+            "spatial_seq_len": self.opt["n_nodes"],
+            "temporal_seq_len": self.n_future_steps,
+            "spatial_attention_type": self.attention_type
         }
+
+        print(model_kwargs)
 
         self.model = model_type(**model_kwargs, **attention_kwargs).to(self.device)
 

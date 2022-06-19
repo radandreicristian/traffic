@@ -4,7 +4,7 @@ batch_log_frequency: 200
 ##################################### Data Configuration ##########################################
 
 # The name of the dataset - Either "metr_la" or "pems_bay"
-dataset: pems_bay
+dataset: metr_la
 
 valid_percentage: .1
 
@@ -22,7 +22,7 @@ batch_size: 32
 
 ################################### Optimizer Configuration ########################################
 # Number of epochs for training
-n_epochs: 250
+n_epochs: 100
 
 # Optimizer (str, sgd/rmsprop/adam/adamax)
 optimizer: adam
@@ -66,11 +66,10 @@ n_blocks: 3
 n_previous_steps: 12
 
 n_future_steps: 12
-
-n_features: 12
-
 ################################ ADN ###################################################
 
 d_features: 1
 d_hidden: 32
 d_feedforward: 256
+
+normalize_all: True

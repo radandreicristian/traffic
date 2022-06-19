@@ -1,10 +1,9 @@
 import logging
-from typing import Optional, Callable, Sequence, List, Dict, Tuple
+from typing import Optional, Sequence, List, Dict, Tuple
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as f
 from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
 from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
@@ -83,9 +82,19 @@ class TrafficDataModule(pl.LightningDataModule):
         self.valid_dataset = KeyedSubset(self.dataset, valid_indices)
         self.test_dataset = KeyedSubset(self.dataset, test_indices)
 
-        train_features = torch.stack([x["features"][:, :] for x, _ in self.train_dataset])
-        self.train_mean = torch.mean(train_features)
-        self.train_std = torch.std(train_features)
+        train_features = torch.stack(
+            [x["features"][:, :] for x, _ in self.train_dataset])
+        if self.normalize_all:
+            valid_features = torch.stack(
+                [x["features"][:, :] for x, _ in self.valid_dataset])
+            test_features = torch.stack(
+                [x["features"][:, :] for x, _ in self.test_dataset])
+            features = torch.cat((train_features, valid_features, test_features), dim=0)
+            self.train_mean = torch.mean(features)
+            self.train_std = torch.std(features)
+        else:
+            self.train_mean = torch.mean(train_features)
+            self.train_std = torch.std(train_features)
 
     @staticmethod
     def onehot_day_of_week(tensor: torch.Tensor) -> torch.Tensor:
