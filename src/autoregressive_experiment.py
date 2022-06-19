@@ -69,6 +69,7 @@ class AutoregressiveExperiment:
         self.task_checkpoint = opt.get("clearml_task_id")
         self.spatial_range: Optional[torch.Tensor] = None
         self.scheduler = None
+        self.normalized_loss = opt.get("normalized_loss")
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -151,9 +152,9 @@ class AutoregressiveExperiment:
         else:
             return {}
 
-    def autoencoder_step(
-            self, batch: List[Dict[str, torch.Tensor]], use_best_model: bool = False
-        ) -> Tuple[torch.tensor, dict]:
+    def autoencoder_step(self,
+                         batch: List[Dict[str, torch.Tensor]]
+                         ) -> Tuple[torch.tensor, dict]:
 
         src_dict, tgt_dict = batch
 
@@ -185,7 +186,11 @@ class AutoregressiveExperiment:
         # De-normalize
         tgt_out_denormalized = tgt_out * self.train_std + self.train_mean
 
-        loss = masked_mae_loss(tgt_dict["raw_features"], tgt_out_denormalized)
+        if self.normalized_loss:
+            loss = masked_mae_loss(tgt_dict["features"], tgt_out)
+        else:
+            loss = masked_mae_loss(tgt_dict["raw_features"], tgt_out_denormalized)
+
         # loss = l1_loss(tgt_dict["features"], tgt_out)
         # loss = l1_loss(tgt_dict["raw_features"], tgt_out_denorm)
         # loss = masked_mae_loss(tgt_dict["features"], tgt_out)
@@ -193,14 +198,13 @@ class AutoregressiveExperiment:
 
         return loss, metrics
 
-    def train_step(
-        self, batch: List[Dict[str, torch.Tensor]], use_best_model: bool = False
-    ) -> Tuple[torch.tensor, dict]:
+    def train_step(self,
+                   batch: List[Dict[str, torch.Tensor]]
+                   ) -> Tuple[torch.tensor, dict]:
         """
-        A single training step, including forward, loss and backward pass for a batch.
+        A single training (autoencoder) step.
 
         :param batch: A tensor containing a batch of input data.
-        :param use_best_model: Whether to use the best model so far or not (for testing).
         :return: A tuple containing the loss and the metrics.
         """
         self.model.train()
@@ -221,7 +225,7 @@ class AutoregressiveExperiment:
     @torch.no_grad()
     def valid_step(self, batch: List[Dict[str, torch.Tensor]]):
         """
-        A single training step, including forward, loss and backward pass for a batch.
+        A single validation (autoencoder) step.
 
         :param batch: A tensor containing a batch of input data.
         :return: A tuple containing the loss and the metrics.
@@ -235,12 +239,9 @@ class AutoregressiveExperiment:
         return loss_value, metrics
 
     @torch.no_grad()
-    def test_step(self,
-                  batch: List[Dict[str, torch.Tensor]],
-                  use_best_model: bool
-                  ) -> Tuple[torch.tensor, dict]:
+    def test_step(self, batch: List[Dict[str, torch.Tensor]]) -> Dict:
         """
-        A single evaluation (valid/test) step, including forward, loss and backward pass for a batch.
+        A single autoregressive test step.
 
         :param batch: A tensor containing a batch of input data.
         :return: A tuple containing the loss and the RMSEs.
@@ -269,7 +270,7 @@ class AutoregressiveExperiment:
 
         for i in range(1, 12):
             tgt_out = self.best_model(**model_args)
-            tgt_inp[..., i, :] = tgt_out[..., i, :]
+            tgt_inp[..., i, :] = tgt_out[..., i - 1, :]
             model_args["tgt_features"] = tgt_inp
 
         tgt_out = self.best_model(**model_args)
@@ -279,13 +280,9 @@ class AutoregressiveExperiment:
         result = result * self.train_std + self.train_mean
 
         metrics = self.compute_metrics(tgt_dict["raw_features"], result)
-        loss = masked_mae_loss(tgt_dict["raw_features"], result)
 
-        loss_value = loss.item()
-
-        del batch, loss
         torch.cuda.empty_cache()
-        return loss_value, metrics
+        return metrics
 
     def setup_data(self):
         datasets = {
@@ -523,7 +520,7 @@ class AutoregressiveExperiment:
         test_mapes = []
         for idx, batch in enumerate(self.test_dataloader):
             batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
-            _, metrics = self.test_step(batch=batch, use_best_model=True)
+            metrics = self.test_step(batch=batch, use_best_model=True)
             test_rmses.append(metrics["rmses"])
             test_maes.append(metrics["maes"])
             test_mapes.append(metrics["mapes"])
@@ -554,7 +551,7 @@ class AutoregressiveExperiment:
         try:
             self.train()
         except KeyboardInterrupt:
-            print("Force stopped training. Evaluating on test set.")
+            print(f"Force stopped training. Evaluating with {self.best_model_info}.")
         finally:
             self.logger.info("Starting testing the model.")
             self.test()
