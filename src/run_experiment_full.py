@@ -4,8 +4,11 @@ import os
 import hydra
 import torch
 from omegaconf import DictConfig
+from pytorch_lightning import seed_everything
 
 from src.experiment import Experiment
+
+seed_everything(21)
 
 
 @hydra.main(config_path="conf", config_name="config_full.yaml")
