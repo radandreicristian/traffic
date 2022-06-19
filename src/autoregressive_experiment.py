@@ -70,6 +70,7 @@ class AutoregressiveExperiment:
         self.spatial_range: Optional[torch.Tensor] = None
         self.scheduler = None
         self.normalized_loss = opt.get("normalized_loss")
+        self.autoregressive_validation = opt.get("autoregressive_validation")
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -198,6 +199,54 @@ class AutoregressiveExperiment:
 
         return loss, metrics
 
+    def autoregressive_step(self,
+                            batch,
+                            use_best_model=False):
+
+        model = self.best_model if use_best_model else self.model
+
+        src_dict, tgt_dict = batch
+
+        src = src_dict["features"]
+
+        # Initialize the decoder input as a sequence of zeros of MAX_LEN (12)
+        tgt_inp = torch.zeros_like(src)
+
+        # Place P11 on first position in decoder input
+        tgt_inp[..., 0, :] = src[..., -1, :]
+
+        model_args = {
+            "src_features": src,
+            "src_interval_of_day": src_dict["interval_of_day"],
+            "src_day_of_week": src_dict["day_of_week"],
+            "src_spatial_descriptor": self.spatial_range,
+            "tgt_features": tgt_inp,
+            "tgt_interval_of_day": tgt_dict["interval_of_day"],
+            "tgt_day_of_week": tgt_dict["day_of_week"],
+            "tgt_spatial_descriptor": self.spatial_range,
+            **self.get_forward_kwargs()
+        }
+
+        for i in range(1, 12):
+            tgt_out = model(**model_args)
+            tgt_inp[..., i, :] = tgt_out[..., i - 1, :]
+            model_args["tgt_features"] = tgt_inp
+
+        tgt_out = model(**model_args)
+
+        tgt_out = torch.cat((tgt_inp[..., 1:, :], tgt_out[..., -1, :].unsqueeze(-2)),
+                            dim=-2)
+        tgt_out_denormalized = tgt_out * self.train_std + self.train_mean
+
+        if self.normalized_loss:
+            loss = masked_mae_loss(tgt_dict["features"], tgt_out)
+        else:
+            loss = masked_mae_loss(tgt_dict["raw_features"], tgt_out_denormalized)
+
+        metrics = self.compute_metrics(tgt_dict["raw_features"], tgt_out_denormalized)
+
+        return loss, metrics
+
     def train_step(self,
                    batch: List[Dict[str, torch.Tensor]]
                    ) -> Tuple[torch.tensor, dict]:
@@ -230,7 +279,10 @@ class AutoregressiveExperiment:
         :param batch: A tensor containing a batch of input data.
         :return: A tuple containing the loss and the metrics.
         """
-        loss, metrics = self.autoencoder_step(batch=batch)
+        if self.autoregressive_validation:
+            loss, metrics = self.autoregressive_step(batch=batch)
+        else:
+            loss, metrics = self.autoencoder_step(batch=batch)
 
         loss_value = loss.item()
 
@@ -246,41 +298,8 @@ class AutoregressiveExperiment:
         :param batch: A tensor containing a batch of input data.
         :return: A tuple containing the loss and the RMSEs.
         """
-        src_dict, tgt_dict = batch
 
-        src = src_dict["features"]
-
-        # Initialize the decoder input as a sequence of zeros of MAX_LEN (12)
-        tgt_inp = torch.zeros_like(src)
-
-        # Place P11 on first position in decoder input
-        tgt_inp[..., 0, :] = src[..., -1, :]
-
-        model_args = {
-            "src_features": src,
-            "src_interval_of_day": src_dict["interval_of_day"],
-            "src_day_of_week": src_dict["day_of_week"],
-            "src_spatial_descriptor": self.spatial_range,
-            "tgt_features": tgt_inp,
-            "tgt_interval_of_day": tgt_dict["interval_of_day"],
-            "tgt_day_of_week": tgt_dict["day_of_week"],
-            "tgt_spatial_descriptor": self.spatial_range,
-            **self.get_forward_kwargs()
-        }
-
-        for i in range(1, 12):
-            tgt_out = self.best_model(**model_args)
-            tgt_inp[..., i, :] = tgt_out[..., i - 1, :]
-            model_args["tgt_features"] = tgt_inp
-
-        tgt_out = self.best_model(**model_args)
-
-        result = torch.cat((tgt_inp[..., 1:, :], tgt_out[..., -1, :].unsqueeze(-2)),
-                           dim=-2)
-        result = result * self.train_std + self.train_mean
-
-        metrics = self.compute_metrics(tgt_dict["raw_features"], result)
-
+        _, metrics = self.autoregressive_step(batch, use_best_model=True)
         torch.cuda.empty_cache()
         return metrics
 

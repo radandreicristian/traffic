@@ -75,3 +75,5 @@ d_feedforward: 256
 normalize_all: False
 
 normalized_loss: False
+
+autoregressive_validation: True

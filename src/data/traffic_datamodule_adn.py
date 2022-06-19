@@ -169,7 +169,6 @@ class TrafficDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=2,
             shuffle=True,
-            pin_memory=True,
             collate_fn=self.collate_fn,
         )
 
