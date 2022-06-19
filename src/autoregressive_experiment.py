@@ -189,7 +189,6 @@ class AutoregressiveExperiment:
         # loss = l1_loss(tgt_dict["features"], tgt_out)
         # loss = l1_loss(tgt_dict["raw_features"], tgt_out_denorm)
         # loss = masked_mae_loss(tgt_dict["features"], tgt_out)
-        print(tgt_out_denormalized.shape)
         metrics = self.compute_metrics(tgt_dict["raw_features"], tgt_out_denormalized)
 
         return loss, metrics
@@ -380,9 +379,6 @@ class AutoregressiveExperiment:
             "temporal_seq_len": self.n_future_steps,
             "spatial_attention_type": self.attention_type
         }
-
-        print(model_kwargs)
-
         self.model = model_type(**model_kwargs, **attention_kwargs).to(self.device)
 
         # Todo - Maybe remove the gradients clipping?
