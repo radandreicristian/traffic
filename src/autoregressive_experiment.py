@@ -50,7 +50,7 @@ class AutoregressiveExperiment:
 
         self.best_model: Optional[torch.nn.Module] = None
         self.best_model_info: dict = {}
-        self.best_val_rmse: float = float("inf")
+        self.best_val_metric: float = float("inf")
 
         self.task: Optional[Task] = None
         self.clearml_logger: Optional[Logger] = None
@@ -488,10 +488,10 @@ class AutoregressiveExperiment:
 
             self.logger.info(f"[Valid|Ep.{epoch}|Overall]: Loss {valid_loss:.2f}.")
 
-            mean_valid_rmse = np.mean(list(valid_rmses.values()))
-            if mean_valid_rmse < self.best_val_rmse:
+            mean_valid_rmse = np.mean(list(valid_maes.values()))
+            if mean_valid_rmse < self.best_val_metric:
                 self.best_model = self.model
-                self.best_val_rmse = mean_valid_rmse
+                self.best_val_metric = mean_valid_rmse
                 self.best_model_info = {"Epoch": epoch}
                 torch.save(self.best_model.state_dict(), self.model_path)
                 self.task.update_output_model(self.model_path)
@@ -507,7 +507,7 @@ class AutoregressiveExperiment:
                 break
 
         self.logger.info(
-            f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_rmse}"
+            f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_metric}"
         )
         if not early_stopping.early_stop:
             torch.save(self.best_model.state_dict(), self.model_path)
@@ -520,7 +520,7 @@ class AutoregressiveExperiment:
         test_mapes = []
         for idx, batch in enumerate(self.test_dataloader):
             batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
-            metrics = self.test_step(batch=batch, use_best_model=True)
+            metrics = self.test_step(batch=batch)
             test_rmses.append(metrics["rmses"])
             test_maes.append(metrics["maes"])
             test_mapes.append(metrics["mapes"])
