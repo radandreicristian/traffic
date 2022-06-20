@@ -377,8 +377,9 @@ class AutoregressiveExperiment:
 
         model_tag = self.opt["model_type"]
         self.attention_type = self.opt["attention_type"]
-        attention_kwargs = self.opt["attention_config"].get(self.attention_type, {})
 
+        attention_kwargs = self.opt["attention_config"].get(self.attention_type, {})
+        attention_kwargs = {**attention_kwargs, "n_nodes": self.opt["n_nodes"]}
         try:
             model_type = models[model_tag]
         except KeyError:
