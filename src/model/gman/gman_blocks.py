@@ -200,16 +200,16 @@ class SpatialAttention(nn.Module):
             activations=f.relu,
             bn_decay=bn_decay,
         )
-        self.fully_connected_out = FullyConnected(
-            in_features=d_hidden,
-            out_features=d_hidden,
-            activations=f.relu,
-            bn_decay=bn_decay,
+
+        self.to_out = nn.Sequential(
+            nn.Linear(in_features=d_hidden, out_features=d_hidden),
+            nn.Dropout(p=0.3),
         )
 
     def forward(self, x, ste):
         batch_size, _, _, _ = x.shape
         x = torch.cat((x, ste), dim=-1)
+
         queries = torch.cat(
             torch.split(self.fully_connected_q(x), self.d_head, dim=-1), dim=0
         )
@@ -230,7 +230,7 @@ class SpatialAttention(nn.Module):
         )
 
         del queries, keys, values, attention_scores
-        return self.fully_connected_out(attention)
+        return self.to_out(attention)
 
 
 class TemporalAttention(nn.Module):
