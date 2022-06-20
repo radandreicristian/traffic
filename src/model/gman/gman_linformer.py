@@ -33,31 +33,32 @@ class LinearSpatialAttention(nn.Module):
 
         self.n_heads = n_heads
         self.n_nodes = n_nodes
+        self.projection = nn.Linear(self.d_hidden, d_hidden_feat)
+        print(d_hidden_feat)
         self.linear_self_attention = LinformerSelfAttention(
-            dim=self.d_hidden,
+            dim=d_hidden_feat,
             seq_len=self.n_nodes,
             heads=self.n_heads,
             k=k,
             one_kv_head=True,
         )
 
-        self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
-
     def forward(self, x: torch.Tensor, ste):
         b, l, n, d = x.shape
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
         h = rearrange(h, "b l n d -> (b l) n d")
+        h = self.projection(h)
         h = self.linear_self_attention(h)
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return f.relu(self.fc_out(h))
+        return h
 
 
 class LinearSpatioTemporalBlock(nn.Module):
     def __init__(
         self,
         n_heads,
-        d_hidden,
+        d_hidden_feat,
         d_hidden_pos,
         bn_decay,
         n_nodes,
@@ -66,19 +67,19 @@ class LinearSpatioTemporalBlock(nn.Module):
         super(LinearSpatioTemporalBlock, self).__init__()
 
         self.spatial_attention = LinearSpatialAttention(
-            d_hidden_feat=d_hidden,
+            d_hidden_feat=d_hidden_feat,
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
             n_nodes=n_nodes,
             k=k,
         )
         self.temporal_attention = TemporalAttention(
-            d_hidden=d_hidden,
+            d_hidden=d_hidden_feat,
             n_heads=n_heads,
             bn_decay=bn_decay,
             d_hidden_pos=d_hidden_pos,
         )
-        self.gated_fusion = GatedFusion(d_hidden=d_hidden, bn_decay=bn_decay)
+        self.gated_fusion = GatedFusion(d_hidden=d_hidden_feat, bn_decay=bn_decay)
 
     def forward(self, x, ste):
         h_spatial = self.spatial_attention(x, ste)
@@ -96,7 +97,7 @@ class LinformerGMAN(nn.Module):
         super(LinformerGMAN, self).__init__()
 
         self.device = device
-        self.d_hidden = opt.get("d_hidden")
+        self.d_hidden_feat = opt.get("d_hidden")
         self.d_hidden_pos = opt.get("d_hidden_pos")
         self.n_heads = opt.get("n_heads")
         self.bn_decay = opt.get("bn_decay", 0.9)
@@ -118,7 +119,7 @@ class LinformerGMAN(nn.Module):
             [
                 LinearSpatioTemporalBlock(
                     n_heads=self.n_heads,
-                    d_hidden=self.d_hidden,
+                    d_hidden_feat=self.d_hidden_feat,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     n_nodes=self.n_nodes,
@@ -128,13 +129,13 @@ class LinformerGMAN(nn.Module):
             ]
         )
         self.transform_attention = TransformAttention(
-            d_hidden=self.d_hidden, n_heads=self.n_heads, bn_decay=self.bn_decay
+            d_hidden=self.d_hidden_feat, n_heads=self.n_heads, bn_decay=self.bn_decay
         )
         self.decoder = nn.ModuleList(
             [
                 LinearSpatioTemporalBlock(
                     n_heads=self.n_heads,
-                    d_hidden=self.d_hidden,
+                    d_hidden_feat=self.d_hidden_feat,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     n_nodes=self.n_nodes,
@@ -145,15 +146,15 @@ class LinformerGMAN(nn.Module):
         )
 
         self.fc_in = FullyConnected(
-            in_features=[1, self.d_hidden],
-            out_features=[self.d_hidden, self.d_hidden],
+            in_features=[1, self.d_hidden_feat],
+            out_features=[self.d_hidden_feat, self.d_hidden_feat],
             activations=[f.relu, None],
             bn_decay=self.bn_decay,
         )
 
         self.fc_out = FullyConnected(
-            in_features=[self.d_hidden, self.d_hidden],
-            out_features=[self.d_hidden, 1],
+            in_features=[self.d_hidden_feat, self.d_hidden_feat],
+            out_features=[self.d_hidden_feat, 1],
             activations=[f.relu, None],
             bn_decay=self.bn_decay,
         )

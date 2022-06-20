@@ -17,32 +17,53 @@ from src.model.gman.gman_blocks import (
 class GroupAttention(nn.Module):
     def __init__(self,
                  d_hidden,
-                 d_hidden_features,
-                 m):
+                 d_hidden_features):
         super(GroupAttention, self).__init__()
 
-        self.q_ = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
-        self.k_ = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
-        self.v_ = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
+        self.q_intra = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
+        self.k_intra = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
+        self.v_intra = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
 
-        self.scale = self.d_head**0.5
-        self.to_out = nn.Linear(in_features=d_hidden_features,
-                                out_features=d_hidden_features)
+        self.q_inter = nn.Linear(in_features=d_hidden_features,
+                                 out_features=d_hidden_features)
+        self.k_inter = nn.Linear(in_features=d_hidden_features,
+                                 out_features=d_hidden_features)
+        self.v_inter = nn.Linear(in_features=d_hidden_features,
+                                 out_features=d_hidden_features)
+
+        self.scale = self.d_head ** 0.5
+        self.to_out_intra = nn.Linear(in_features=d_hidden_features,
+                                      out_features=d_hidden_features)
+
+        self.to_out_inter = nn.Linear(in_features=d_hidden_features,
+                                      out_features=d_hidden_features)
 
         self.group_pool = nn.MaxPool1d(kernel_size=d_hidden_features)
-        self.m = 37 # This is from the paper :shrug:
+        self.m = 37  # This is from the paper :shrug:
 
-    def forward_single(self, x):
-        q = self.q_(x)
-        k = self.k_(x)
-        v = self.v_(x)
+    def forward_single_intra(self, x):
+        q = self.q_intra(x)
+        k = self.k_intra(x)
+        v = self.v_intra(x)
         q, k, v = (rearrange(i,
                              "b n (h d) -> b h n d",
                              h=self.n_heads) for i in (q, k, v))
 
-        attention = f.softmax((q@k.transpose(-1, -2)*self.scale), dim=-1)
+        attention = f.softmax((q @ k.transpose(-1, -2) * self.scale), dim=-1)
         v = attention @ v
-        return self.to_out(rearrange(v, "b h n d -> b n (h d)"))
+        return self.to_out_intra(rearrange(v, "b h n d -> b n (h d)"))
+
+    def forward_single_inter(self, x):
+        q = self.q_inter(x)
+        k = self.k_inter(x)
+        v = self.v_inter(x)
+        q, k, v = (rearrange(i,
+                             "b n (h d) -> b h n d",
+                             h=self.n_heads) for i in (q, k, v))
+
+        attention = f.softmax((q @ k.transpose(-1, -2) * self.scale), dim=-1)
+        v = attention @ v
+        return self.to_out_inter(rearrange(v, "b h n d -> b n (h d)"))
 
     def forward(self, x, **kwargs):
         b, _, d = x.shape
@@ -53,29 +74,41 @@ class GroupAttention(nn.Module):
 
         # Intra-group Attention
         for partition in partitions:
+
+            # x_ [B, N/K, D]
             x_ = x[:, partition, :]
             group_size = len(partition)
 
-            # pad the smaller chunk if there is one
+            # Pad the smaller chunk if there is one
             if group_size == odd_chunk_size:
                 padding = chunk_size - odd_chunk_size
                 pad_tensor = torch.zeros((b, padding, d)).to(x.device)
                 x_ = torch.cat([x_, pad_tensor], dim=1)
-            group_attention = self.forward_single(x_)
+
+            # (B, N/K, D)
+            group_attention = self.forward_single_intra(x_)
             intra_group_attentions.append(group_attention)
 
-        # Inter-group attention
-        r = []
-
         # attentive_group (B, N/K, d)
+        inter_group_features = []
         for attentive_group in intra_group_attentions:
-            pooled_group_features =
+            attentive_group = attentive_group.transpose(-1, -2)
+            # pooled_group_features (B, d)
+            pooled_group_features = self.group_pool(attentive_group).squeeze()
+            inter_group_features.append(pooled_group_features)
 
-        intra_group_attentions = torch.cat(intra_group_attentions, dim=1)
-        r = torch.cat(partitions)
+        # inter_group_features (B, K, d)
+        inter_group_features = torch.stack(inter_group_features, dim=-2)
+        inter_group_attentive_features = self.forward_single_inter(inter_group_features)
 
-        # Revert the shuffling
-        return intra_group_attentions[:, torch.argsort(r), :]
+        # group (B, N/K, d)
+        for index, group in enumerate(intra_group_attentions):
+            group += inter_group_attentive_features[:, index, :]
+
+        features = torch.cat(intra_group_attentions, dim=-2)
+
+        return features[:, torch.argsort(partitions), :]
+
 
 class GroupSpatialAttention(nn.Module):
     def __init__(

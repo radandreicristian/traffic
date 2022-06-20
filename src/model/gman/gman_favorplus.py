@@ -29,25 +29,26 @@ class FavorPlusAttention(nn.Module):
             "Hidden size not divisible by number of " "heads."
         )
 
+        self.projection = nn.Linear(in_features=self.d_hidden,
+                                    out_features=d_hidden_feat)
         self.n_heads = n_heads
         self.linear_self_attention = SelfAttention(
-            dim=self.d_hidden,
+            dim=d_hidden_feat,
             heads=self.n_heads,
-            dim_head=self.d_hidden // n_heads,
+            dim_head=d_hidden_feat // n_heads,
             local_window_size=self.d_hidden,
             causal=False,
         )
-
-        self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
 
     def forward(self, x: torch.Tensor, ste):
         b, l, n, d = x.shape
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
+        h = self.projection(h)
         h = rearrange(h, "b l n d -> (b l) n d")
         h = self.linear_self_attention(h)
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return f.relu(self.fc_out(h))
+        return h
 
 
 class FavorPlusSpatioTemporalBlock(nn.Module):

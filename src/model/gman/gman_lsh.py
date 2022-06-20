@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
+from reformer_pytorch import LSHSelfAttention
 from torch import Tensor
 
 from src.model.gman.gman_blocks import (
@@ -12,8 +13,6 @@ from src.model.gman.gman_blocks import (
     SpatioTemporalEmbedding,
     TransformAttention,
 )
-
-from reformer_pytorch import LSHSelfAttention
 
 
 class LshSelfAttention(nn.Module):
@@ -60,16 +59,18 @@ class LshSpatialAttention(nn.Module):
             p_dropout,
     ) -> None:
         super(LshSpatialAttention, self).__init__()
-        self.d_hidden = d_hidden_feat + d_hidden_pos
 
-        assert self.d_hidden % n_heads == 0, (
+        assert d_hidden_feat % n_heads == 0, (
             "Hidden size not divisible by number of " "heads."
         )
 
         self.n_heads = n_heads
         self.n_nodes = n_nodes
+        d_hidden = d_hidden_feat + d_hidden_pos
+        self.projection = nn.Linear(in_features=d_hidden, out_features=d_hidden_feat)
+
         self.linear_self_attention = LshSelfAttention(
-            d_hidden=self.d_hidden, n_heads=self.n_heads, p_dropout=p_dropout
+            d_hidden=d_hidden_feat, n_heads=self.n_heads, p_dropout=p_dropout
         )
 
     def forward(self, x: torch.Tensor, ste):
@@ -77,6 +78,7 @@ class LshSpatialAttention(nn.Module):
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
         h = rearrange(h, "b l n d -> (b l) n d")
+        h = self.projection(h)
         h = self.linear_self_attention(h)
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
         return h

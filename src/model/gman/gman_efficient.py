@@ -16,34 +16,46 @@ from src.model.gman.gman_blocks import (
 
 class EfficientSelfAttention(nn.Module):
     def __init__(self,
-                 d_hidden: int,
+                 d_hidden_feat: int,
+                 d_hidden_pos: int,
                  n_heads: int,
-                 p_dropout: int,
-                 **kwargs
+                 p_dropout: float,
+                 use_mask: bool = False
                  ):
         super(EfficientSelfAttention, self).__init__()
+        d_hidden = d_hidden_feat + d_hidden_pos
         assert d_hidden % n_heads == 0, "Hidden dimension must be divisible by n_heads."
         self.n_heads = n_heads
         self.d_head = d_hidden // n_heads
 
-        self.to_qkv = nn.Linear(in_features=3 * d_hidden, out_features=3 * d_hidden,
-                                bias=False)
+        self.to_q = nn.Linear(in_features=d_hidden, out_features=d_hidden_feat,
+                              bias=True)
+        self.to_k = nn.Linear(in_features=d_hidden, out_features=d_hidden_feat,
+                              bias=True)
+        self.to_v = nn.Linear(in_features=d_hidden, out_features=d_hidden_feat,
+                              bias=True)
 
-        # Original scale in transformers is s = 1/sqrt(n) = n ** -0.5. Here,
-        # the scale is sqrt(s) = n ** -0.25
-        self.scale = self.d_head ** -0.25
-        self.fc_out = nn.Linear(in_features=d_hidden, out_features=d_hidden)
+        self.scale = self.d_head ** 0.5
+        if n_heads == 1:
+            self.to_out = nn.Dropout(p=p_dropout)
+        else:
+            self.to_out = nn.Sequential(
+                nn.Linear(in_features=d_hidden_feat, out_features=d_hidden_feat,
+                          bias=False),
+                nn.Dropout(p=p_dropout),
+            )
+        self.use_mask = use_mask
 
     def forward(self, x):
+        q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)
         q, k, v = map(
-            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.n_heads),
-            (self.query(x), self.key(x), self.value(x)),
+            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.n_heads), (q, k, v)
         )
 
-        q = q.softmax(dim=-1) * self.scale
-        k = q.softmax(dim=-2) * self.scale
+        q = q.softmax(dim=-1) * self.scale ** -0.25
 
-        context_vectors = k.transpose(-1, -2) @ v
+        context_vectors = (k.transpose(-1, -2) @ v).softmax(
+            dim=-2) * self.scale ** -0.25
         attention = q @ context_vectors
 
         attention = rearrange(attention, "b h n d -> b n (h d)")
@@ -51,7 +63,7 @@ class EfficientSelfAttention(nn.Module):
         return self.to_out(attention)
 
 
-class LinearSpatialAttention(nn.Module):
+class EfficientSpatialAttention(nn.Module):
     def __init__(
             self,
             d_hidden_feat,
@@ -60,7 +72,7 @@ class LinearSpatialAttention(nn.Module):
             n_nodes,
             p_dropout,
     ) -> None:
-        super(LinearSpatialAttention, self).__init__()
+        super(EfficientSpatialAttention, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
 
         assert self.d_hidden % n_heads == 0, (
@@ -70,10 +82,11 @@ class LinearSpatialAttention(nn.Module):
         self.n_heads = n_heads
         self.n_nodes = n_nodes
         self.linear_self_attention = EfficientSelfAttention(
-            d_hidden=self.d_hidden, n_heads=self.n_heads, p_dropout=p_dropout
+            d_hidden_feat=d_hidden_feat,
+            d_hidden_pos=d_hidden_pos,
+            n_heads=self.n_heads,
+            p_dropout=p_dropout
         )
-
-        self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
 
     def forward(self, x: torch.Tensor, ste):
         b, l, n, d = x.shape
@@ -82,7 +95,7 @@ class LinearSpatialAttention(nn.Module):
         h = rearrange(h, "b l n d -> (b l) n d")
         h = self.linear_self_attention(h)
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return f.relu(self.fc_out(h))
+        return h
 
 
 class LinearSpatioTemporalBlock(nn.Module):
@@ -97,7 +110,7 @@ class LinearSpatioTemporalBlock(nn.Module):
     ):
         super(LinearSpatioTemporalBlock, self).__init__()
 
-        self.spatial_attention = LinearSpatialAttention(
+        self.spatial_attention = EfficientSpatialAttention(
             d_hidden_feat=d_hidden,
             d_hidden_pos=d_hidden_pos,
             n_heads=n_heads,
