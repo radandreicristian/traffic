@@ -1,27 +1,22 @@
+import binascii
 import logging
+import os
 import os.path as osp
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
-from clearml.logger import StdStreamPatch
+
 import numpy as np
 import pytorch_lightning as pl
 import torch.cuda
 from clearml import Task, TaskTypes, Logger
+from clearml.logger import StdStreamPatch
 from omegaconf import DictConfig
-from torch.nn.functional import mse_loss
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import MetrLa, MetrLaInMemory, PemsBay, PemsBayInMemory
 
-from src.model.gman.gman_fast import FastGMAN
-from src.model.gman.gman_linformer import LinformerGMAN
-from src.model.gman.gatman import GATMAN
-from src.model.gman.gman_lsh import LshGMAN
-from src.util.masked_metrics import masked_rmse, masked_mae, masked_mape, \
-    masked_mae_loss, unmasked_rmse, unmasked_mae, unmasked_mape
-from src.util.utils import get_number_of_nodes
 from src.data.traffic_datamodule import TrafficDataModule
 from src.model import (
     GraphMultiAttentionNet,
@@ -32,14 +27,17 @@ from src.model import (
     EGCNet,
     LinformerGMAN,
     EfficientGMAN,
-    FavorPlusGMAN,
+    FavorPlusGMAN, GroupGMAN,
 )
+from src.model.gman.gatman import GATMAN
+from src.model.gman.gman_fast import FastGMAN
+from src.model.gman.gman_lsh import LshGMAN
 from src.util.constants import *
 from src.util.earlystopping import EarlyStopping
 from src.util.generate_node2vec import Node2VecEmbedder
-
-import os
-import binascii
+from src.util.masked_metrics import masked_rmse, masked_mae, masked_mape, \
+    masked_mae_loss, unmasked_rmse, unmasked_mae, unmasked_mape
+from src.util.utils import get_number_of_nodes
 
 indices = {k: k // 5 - 1 for k in [5, 15, 30, 60]}
 
@@ -183,7 +181,8 @@ class Experiment:
         return metrics
 
     def common_step(
-        self, batch: List[torch.Tensor], pos_encoding=None, use_best_model: bool = False
+            self, batch: List[torch.Tensor], pos_encoding=None, use_best_model: bool =
+            False, **kwargs
     ) -> Tuple[torch.tensor, dict]:
         """
         A common step for training and validation.
@@ -200,15 +199,15 @@ class Experiment:
 
         if self.use_temporal_features:
             y_hat = (
-                self.model(x_signal, x_temporal, y_temporal)
+                self.model(x_signal, x_temporal, y_temporal, **kwargs)
                 if not use_best_model
-                else self.best_model(x_signal, x_temporal, y_temporal)
+                else self.best_model(x_signal, x_temporal, y_temporal, **kwargs)
             )
         else:
             y_hat = (
-                self.model(x_signal)
+                self.model(x_signal, **kwargs)
                 if not use_best_model
-                else self.best_model(x_signal)
+                else self.best_model(x_signal, **kwargs)
             )
         # loss = masked_mae_loss(y_signal, y_hat)
         y_hat = y_hat * self.train_std + self.train_mean
@@ -217,7 +216,7 @@ class Experiment:
         return loss, metrics
 
     def train_step(
-        self, batch: List[torch.Tensor], pos_encoding=None
+            self, batch: List[torch.Tensor], pos_encoding=None, **kwargs
     ) -> Tuple[torch.tensor, dict]:
         """
         A single training step, including forward, loss and backward pass for a batch.
@@ -229,7 +228,7 @@ class Experiment:
         self.model.train()
         self.optimizer.zero_grad()
 
-        loss, metrics = self.common_step(batch, pos_encoding)
+        loss, metrics = self.common_step(batch, pos_encoding, **kwargs)
 
         if hasattr(self.model, "ode_block"):
             if self.model.ode_block.n_reg > 0:
@@ -254,7 +253,8 @@ class Experiment:
 
     @torch.no_grad()
     def eval_step(
-        self, batch: List[torch.Tensor], pos_encoding=None, use_best_model: bool = False
+            self, batch: List[torch.Tensor], pos_encoding=None, use_best_model: bool =
+            False, **kwargs
     ) -> Tuple[torch.tensor, dict]:
         """
         A single evaluation (valid/test) step, including forward, loss and backward pass for a batch.
@@ -268,7 +268,7 @@ class Experiment:
             self.best_model.eval()
         else:
             self.model.eval()
-        loss, metrics = self.common_step(batch, pos_encoding, use_best_model)
+        loss, metrics = self.common_step(batch, pos_encoding, use_best_model, **kwargs)
 
         return loss.item(), metrics
 
@@ -370,7 +370,8 @@ class Experiment:
             "gman_efficient": EfficientGMAN,
             "gman_favor": FavorPlusGMAN,
             "gman_fast": FastGMAN,
-            "gman_lsh": LshGMAN
+            "gman_lsh": LshGMAN,
+            "gman_group": GroupGMAN
         }
 
         non_temporal_augmented_models = ["lgdr", "gdr", "ode"]
@@ -431,6 +432,12 @@ class Experiment:
             checkpoint_path=self.model_path, patience=patience
         )
         for epoch in range(self.opt["n_epochs"]):
+            forward_kwargs = {}
+            if self.opt["model_type"] == "gman_group":
+                partitions = torch.chunk(torch.randperm(self.opt["n_nodes"]),
+                                         chunks=self.opt.get("n_groups", 37))
+                forward_kwargs['partitions'] = partitions
+
             train_rmses = []
             train_maes = []
             train_mapes = []
@@ -438,7 +445,7 @@ class Experiment:
             for idx, batch in enumerate(self.train_dataloader):
                 start_time = time.time()
                 batch = [e.to(self.device) for e in batch]
-                loss, metrics = self.train_step(batch=batch)
+                loss, metrics = self.train_step(batch=batch, **forward_kwargs)
 
                 train_losses.append(loss)
                 train_rmses.append(metrics["rmses"])
@@ -474,7 +481,7 @@ class Experiment:
             valid_losses = []
             for idx, batch in enumerate(self.valid_dataloader):
                 batch = [e.to(self.device) for e in batch]
-                loss, metrics = self.eval_step(batch=batch)
+                loss, metrics = self.eval_step(batch=batch, **forward_kwargs)
 
                 valid_losses.append(loss)
                 valid_rmses.append(metrics["rmses"])
@@ -527,9 +534,17 @@ class Experiment:
         test_rmses = []
         test_maes = []
         test_mapes = []
+
+        forward_kwargs = {}
+        if self.opt["model_type"] == "gman_group":
+            partitions = torch.chunk(torch.randperm(self.opt["n_nodes"]),
+                                     chunks=self.opt.get("n_groups", 37))
+            forward_kwargs['partitions'] = partitions
+
         for idx, batch in enumerate(self.test_dataloader):
             batch = [e.to(self.device) for e in batch]
-            _, metrics = self.eval_step(batch=batch, use_best_model=True)
+            _, metrics = self.eval_step(batch=batch, use_best_model=True,
+                                        **forward_kwargs)
             test_rmses.append(metrics["rmses"])
             test_maes.append(metrics["maes"])
             test_mapes.append(metrics["mapes"])

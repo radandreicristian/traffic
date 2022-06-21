@@ -17,8 +17,15 @@ from src.model.gman.gman_blocks import (
 class GroupAttention(nn.Module):
     def __init__(self,
                  d_hidden,
-                 d_hidden_features):
+                 d_hidden_features,
+                 n_heads,
+                 p_dropout,
+                 n_nodes,
+                 n_groups):
         super(GroupAttention, self).__init__()
+
+        self.n_nodes = n_nodes
+        self.n_groups = n_groups
 
         self.q_intra = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
         self.k_intra = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
@@ -31,15 +38,17 @@ class GroupAttention(nn.Module):
         self.v_inter = nn.Linear(in_features=d_hidden_features,
                                  out_features=d_hidden_features)
 
-        self.scale = self.d_head ** 0.5
+        self.n_heads = n_heads
+        self.d_head = d_hidden_features // n_heads
+        self.scale = self.d_head ** -0.5
         self.to_out_intra = nn.Linear(in_features=d_hidden_features,
                                       out_features=d_hidden_features)
 
         self.to_out_inter = nn.Linear(in_features=d_hidden_features,
                                       out_features=d_hidden_features)
 
-        self.group_pool = nn.MaxPool1d(kernel_size=d_hidden_features)
-        self.m = 37  # This is from the paper :shrug:
+        self.group_pool = nn.MaxPool1d(kernel_size=n_nodes // n_groups)
+        self.dropout = nn.Dropout(p_dropout)
 
     def forward_single_intra(self, x):
         q = self.q_intra(x)
@@ -89,25 +98,34 @@ class GroupAttention(nn.Module):
             group_attention = self.forward_single_intra(x_)
             intra_group_attentions.append(group_attention)
 
+        # intra_group_attentions [(B, N/K, D) * K]
+
         # attentive_group (B, N/K, d)
         inter_group_features = []
         for attentive_group in intra_group_attentions:
+            # attentive_group (B, d, N/K)
             attentive_group = attentive_group.transpose(-1, -2)
+
             # pooled_group_features (B, d)
             pooled_group_features = self.group_pool(attentive_group).squeeze()
             inter_group_features.append(pooled_group_features)
 
-        # inter_group_features (B, K, d)
+        # inter_group_features [(B, D) * K]
+
+        # inter_group_features (B, K, D)
         inter_group_features = torch.stack(inter_group_features, dim=-2)
         inter_group_attentive_features = self.forward_single_inter(inter_group_features)
 
         # group (B, N/K, d)
+        final_attentions = []
         for index, group in enumerate(intra_group_attentions):
-            group += inter_group_attentive_features[:, index, :]
+            inter_group = inter_group_attentive_features[:, index, :].unsqueeze(dim=-2)
+            final_attentions.append(group + inter_group)
 
-        features = torch.cat(intra_group_attentions, dim=-2)
+        features = torch.cat(final_attentions, dim=-2)
 
-        return features[:, torch.argsort(partitions), :]
+        reverse_sorted_indices = torch.argsort(torch.cat(partitions))
+        return features[:, reverse_sorted_indices, :]
 
 
 class GroupSpatialAttention(nn.Module):
@@ -118,6 +136,7 @@ class GroupSpatialAttention(nn.Module):
             n_heads,
             n_nodes,
             p_dropout,
+            n_groups,
     ) -> None:
         super(GroupSpatialAttention, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
@@ -128,17 +147,21 @@ class GroupSpatialAttention(nn.Module):
 
         self.n_heads = n_heads
         self.n_nodes = n_nodes
+        self.attention = GroupAttention(d_hidden=self.d_hidden,
+                                        d_hidden_features=d_hidden_feat,
+                                        n_heads=n_heads,
+                                        p_dropout=p_dropout,
+                                        n_nodes=n_nodes,
+                                        n_groups=n_groups)
 
-        self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
-
-    def forward(self, x: torch.Tensor, ste):
+    def forward(self, x: torch.Tensor, ste, **kwargs):
         b, l, n, d = x.shape
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
         h = rearrange(h, "b l n d -> (b l) n d")
-
+        h = self.attention(h, **kwargs)
         h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return self.fc_out(h)
+        return h
 
 
 class GroupSpatioTemporalBlock(nn.Module):
@@ -150,6 +173,7 @@ class GroupSpatioTemporalBlock(nn.Module):
             bn_decay,
             n_nodes,
             p_dropout,
+            n_groups
     ):
         super(GroupSpatioTemporalBlock, self).__init__()
 
@@ -159,6 +183,7 @@ class GroupSpatioTemporalBlock(nn.Module):
             n_heads=n_heads,
             n_nodes=n_nodes,
             p_dropout=p_dropout,
+            n_groups=n_groups
         )
         self.temporal_attention = TemporalAttention(
             d_hidden=d_hidden,
@@ -168,8 +193,8 @@ class GroupSpatioTemporalBlock(nn.Module):
         )
         self.gated_fusion = GatedFusion(d_hidden=d_hidden, bn_decay=bn_decay)
 
-    def forward(self, x, ste):
-        h_spatial = self.spatial_attention(x, ste)
+    def forward(self, x, ste, **kwargs):
+        h_spatial = self.spatial_attention(x, ste, **kwargs)
         h_temporal = self.temporal_attention(x, ste)
         h = self.gated_fusion(h_spatial, h_temporal)
 
@@ -177,11 +202,11 @@ class GroupSpatioTemporalBlock(nn.Module):
         return x + h
 
 
-class EfficientGMAN(nn.Module):
+class GroupGMAN(nn.Module):
     def __init__(
             self, opt: dict, dataset: torch_geometric.data.Dataset, device: torch.device
     ):
-        super(EfficientGMAN, self).__init__()
+        super(GroupGMAN, self).__init__()
 
         self.device = device
         self.d_hidden = opt.get("d_hidden")
@@ -192,7 +217,9 @@ class EfficientGMAN(nn.Module):
         self.n_previous = opt.get("n_previous_steps")
         self.n_future = opt.get("n_future_steps")
         self.n_blocks = opt.get("n_blocks")
+
         self.n_nodes = opt.get("n_nodes")
+        self.n_groups = opt.get("n_groups")
 
         self.positional_embeddings = nn.Parameter(
             data=opt.get("positional_embeddings"), requires_grad=False
@@ -204,13 +231,14 @@ class EfficientGMAN(nn.Module):
         self.p_dropout = opt.get("p_dropout_model")
         self.encoder = nn.ModuleList(
             [
-                LinearSpatioTemporalBlock(
+                GroupSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     n_nodes=self.n_nodes,
                     p_dropout=self.p_dropout,
+                    n_groups=self.n_groups,
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -220,13 +248,14 @@ class EfficientGMAN(nn.Module):
         )
         self.decoder = nn.ModuleList(
             [
-                LinearSpatioTemporalBlock(
+                GroupSpatioTemporalBlock(
                     n_heads=self.n_heads,
                     d_hidden=self.d_hidden,
                     d_hidden_pos=self.d_hidden_pos,
                     bn_decay=self.bn_decay,
                     n_nodes=self.n_nodes,
                     p_dropout=self.p_dropout,
+                    n_groups=self.n_groups
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -248,7 +277,7 @@ class EfficientGMAN(nn.Module):
 
     def forward(
             self, x_signal: torch.Tensor, x_temporal: torch.Tensor,
-            y_temporal: torch.Tensor
+            y_temporal: torch.Tensor, **kwargs
     ) -> Tensor:
         # x_signal: (batch_size, n_previous, n_nodes, 1)
         # x_temporal: (batch_size, n_previous, n_nodes, 2)
@@ -269,12 +298,12 @@ class EfficientGMAN(nn.Module):
         st_embeddings_future = st_embeddings[:, first_future_index:, ...]
 
         for block in self.encoder:
-            x = block(x, st_embeddings_previous)
+            x = block(x, st_embeddings_previous, **kwargs)
 
         x = self.transform_attention(x, st_embeddings_previous, st_embeddings_future)
 
         for block in self.decoder:
-            x = block(x, st_embeddings_future)
+            x = block(x, st_embeddings_future, **kwargs)
 
         x = torch.squeeze(self.fc_out(x), 3)
         return x
