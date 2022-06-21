@@ -220,3 +220,5 @@ hydra:
       seed: 21
 
 n_groups: 37
+
+share_inter_intra: True

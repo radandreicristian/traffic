@@ -54,9 +54,9 @@ early_stop_patience: 7
 model_type: gman
 
 # Size of the hidden feature vectors in the model (int)
-d_hidden: 32
+d_hidden: 2
 
-d_hidden_pos: 32
+d_hidden_pos: 2
 
 linformer_k: 8
 # Adds a fully-connected layer at the beginning of the encoder (bool) {use_mlp}
@@ -151,7 +151,7 @@ leaky_relu_slope: .2
 attention_dropout: .3
 
 # Number of attention heads (int) {heads}
-n_heads: 4
+n_heads: 2
 
 # Attention normalization index (int, 0/1) - 0: by rows, 1: by cols
 attention_norm_idx: 0
@@ -217,3 +217,5 @@ hydra:
       seed: 21
 
 n_groups: 37
+
+share_inter_intra: True

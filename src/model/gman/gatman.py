@@ -44,20 +44,11 @@ class GATWrapper(nn.Module):
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
 
-        h = rearrange(h, "b l n d -> (b l) n d")
+        h = rearrange(h, "b l n d -> (b l n) d")
 
-        h = torch.stack(
-            [
-                self.gat_layer(
-                    g,
-                    edge_index=self.edge_index,
-                    edge_attr=self.edge_attr,
-                )
-                for g in h
-            ]
-        )
+        h = self.gat_layer(h, edge_index=self.edge_index, edge_attr=self.edge_attr)
 
-        h = rearrange(h, "(b l) n d -> b l n d", b=b)
+        h = rearrange(h, "(b l n) d -> b l n d", b=b, n=n)
         return h
 
 

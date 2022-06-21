@@ -21,58 +21,90 @@ class GroupAttention(nn.Module):
                  n_heads,
                  p_dropout,
                  n_nodes,
-                 n_groups):
+                 n_groups,
+                 share_inter_intra=False):
         super(GroupAttention, self).__init__()
 
         self.n_nodes = n_nodes
         self.n_groups = n_groups
 
-        self.q_intra = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
-        self.k_intra = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
-        self.v_intra = nn.Linear(in_features=d_hidden, out_features=d_hidden_features)
+        self.share_inter_intra = share_inter_intra
+        if share_inter_intra:
+            self.q_shared = nn.Linear(in_features=d_hidden,
+                                      out_features=d_hidden_features)
+            self.k_shared = nn.Linear(in_features=d_hidden,
+                                      out_features=d_hidden_features)
+            self.v_shared = nn.Linear(in_features=d_hidden,
+                                      out_features=d_hidden_features)
+            self.to_out_shared = nn.Linear(in_features=d_hidden_features,
+                                           out_features=d_hidden_features)
+        else:
+            self.q_intra = nn.Linear(in_features=d_hidden,
+                                     out_features=d_hidden_features)
+            self.k_intra = nn.Linear(in_features=d_hidden,
+                                     out_features=d_hidden_features)
+            self.v_intra = nn.Linear(in_features=d_hidden,
+                                     out_features=d_hidden_features)
+            self.to_out_intra = nn.Linear(in_features=d_hidden_features,
+                                          out_features=d_hidden_features)
 
-        self.q_inter = nn.Linear(in_features=d_hidden_features,
-                                 out_features=d_hidden_features)
-        self.k_inter = nn.Linear(in_features=d_hidden_features,
-                                 out_features=d_hidden_features)
-        self.v_inter = nn.Linear(in_features=d_hidden_features,
-                                 out_features=d_hidden_features)
+            self.q_inter = nn.Linear(in_features=d_hidden_features,
+                                     out_features=d_hidden_features)
+            self.k_inter = nn.Linear(in_features=d_hidden_features,
+                                     out_features=d_hidden_features)
+            self.v_inter = nn.Linear(in_features=d_hidden_features,
+                                     out_features=d_hidden_features)
+            self.to_out_inter = nn.Linear(in_features=d_hidden_features,
+                                          out_features=d_hidden_features)
 
         self.n_heads = n_heads
         self.d_head = d_hidden_features // n_heads
         self.scale = self.d_head ** -0.5
-        self.to_out_intra = nn.Linear(in_features=d_hidden_features,
-                                      out_features=d_hidden_features)
-
-        self.to_out_inter = nn.Linear(in_features=d_hidden_features,
-                                      out_features=d_hidden_features)
 
         self.group_pool = nn.MaxPool1d(kernel_size=n_nodes // n_groups)
         self.dropout = nn.Dropout(p_dropout)
 
     def forward_single_intra(self, x):
-        q = self.q_intra(x)
-        k = self.k_intra(x)
-        v = self.v_intra(x)
+        if self.share_inter_intra:
+            q = self.q_shared(x)
+            k = self.k_shared(x)
+            v = self.v_shared(x)
+        else:
+            q = self.q_intra(x)
+            k = self.k_intra(x)
+            v = self.v_intra(x)
         q, k, v = (rearrange(i,
                              "b n (h d) -> b h n d",
                              h=self.n_heads) for i in (q, k, v))
 
         attention = f.softmax((q @ k.transpose(-1, -2) * self.scale), dim=-1)
         v = attention @ v
-        return self.to_out_intra(rearrange(v, "b h n d -> b n (h d)"))
+        v = rearrange(v, "b h n d -> b n (h d)")
+        if self.share_inter_intra:
+            return self.to_out_shared(v)
+        else:
+            return self.to_out_intra(v)
 
     def forward_single_inter(self, x):
-        q = self.q_inter(x)
-        k = self.k_inter(x)
-        v = self.v_inter(x)
+        if self.share_inter_intra:
+            q = self.q_shared(x)
+            k = self.k_shared(x)
+            v = self.v_shared(x)
+        else:
+            q = self.q_inter(x)
+            k = self.k_inter(x)
+            v = self.v_inter(x)
         q, k, v = (rearrange(i,
                              "b n (h d) -> b h n d",
                              h=self.n_heads) for i in (q, k, v))
 
         attention = f.softmax((q @ k.transpose(-1, -2) * self.scale), dim=-1)
         v = attention @ v
-        return self.to_out_inter(rearrange(v, "b h n d -> b n (h d)"))
+        v = rearrange(v, "b h n d -> b n (h d)")
+        if self.share_inter_intra:
+            return self.to_out_shared(v)
+        else:
+            return self.to_out_inter(v)
 
     def forward(self, x, **kwargs):
         b, _, d = x.shape
@@ -137,6 +169,7 @@ class GroupSpatialAttention(nn.Module):
             n_nodes,
             p_dropout,
             n_groups,
+            share_inter_intra,
     ) -> None:
         super(GroupSpatialAttention, self).__init__()
         self.d_hidden = d_hidden_feat + d_hidden_pos
@@ -152,7 +185,8 @@ class GroupSpatialAttention(nn.Module):
                                         n_heads=n_heads,
                                         p_dropout=p_dropout,
                                         n_nodes=n_nodes,
-                                        n_groups=n_groups)
+                                        n_groups=n_groups,
+                                        share_inter_intra=share_inter_intra)
 
     def forward(self, x: torch.Tensor, ste, **kwargs):
         b, l, n, d = x.shape
@@ -173,7 +207,8 @@ class GroupSpatioTemporalBlock(nn.Module):
             bn_decay,
             n_nodes,
             p_dropout,
-            n_groups
+            n_groups,
+            share_inter_intra
     ):
         super(GroupSpatioTemporalBlock, self).__init__()
 
@@ -183,7 +218,8 @@ class GroupSpatioTemporalBlock(nn.Module):
             n_heads=n_heads,
             n_nodes=n_nodes,
             p_dropout=p_dropout,
-            n_groups=n_groups
+            n_groups=n_groups,
+            share_inter_intra=share_inter_intra
         )
         self.temporal_attention = TemporalAttention(
             d_hidden=d_hidden,
@@ -220,6 +256,7 @@ class GroupGMAN(nn.Module):
 
         self.n_nodes = opt.get("n_nodes")
         self.n_groups = opt.get("n_groups")
+        share_inter_intra = opt.get("share_inter_intra", False)
 
         self.positional_embeddings = nn.Parameter(
             data=opt.get("positional_embeddings"), requires_grad=False
@@ -239,6 +276,7 @@ class GroupGMAN(nn.Module):
                     n_nodes=self.n_nodes,
                     p_dropout=self.p_dropout,
                     n_groups=self.n_groups,
+                    share_inter_intra=share_inter_intra
                 )
                 for _ in range(self.n_blocks)
             ]
@@ -255,7 +293,8 @@ class GroupGMAN(nn.Module):
                     bn_decay=self.bn_decay,
                     n_nodes=self.n_nodes,
                     p_dropout=self.p_dropout,
-                    n_groups=self.n_groups
+                    n_groups=self.n_groups,
+                    share_inter_intra=share_inter_intra
                 )
                 for _ in range(self.n_blocks)
             ]
