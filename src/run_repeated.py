@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 from src.autoregressive_experiment import AutoregressiveExperiment
 
 
-@hydra.main(config_path="conf", config_name="config_small_autoregressive.yaml")
+@hydra.main(config_path="conf", config_name="config_full_autoregressive.yaml")
 def main(config: DictConfig):
     for i in range(10):
         experiment = AutoregressiveExperiment(config)
