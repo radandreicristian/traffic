@@ -1,6 +1,10 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as f
 import torch_geometric
 from einops import rearrange
 from torch import Tensor
+from torch_geometric.nn.conv import GATConv
 
 from src.model.gman.gman_blocks import (
     FullyConnected,
@@ -9,10 +13,6 @@ from src.model.gman.gman_blocks import (
     SpatioTemporalEmbedding,
     TransformAttention,
 )
-import torch
-import torch.nn as nn
-import torch.nn.functional as f
-from torch_geometric.nn.conv import GATConv
 from src.model.gman.util.knn_rewire import knn_rewire
 
 
@@ -27,20 +27,16 @@ class GATWrapper(nn.Module):
             "Hidden size not divisible by number of " "heads."
         )
 
-        d_head = self.d_hidden // n_heads
-
         self.n_heads = n_heads
-        self.fc_in = nn.Linear(in_features=self.d_hidden, out_features=self.d_hidden)
         self.gat_layer = GATConv(
             in_channels=self.d_hidden,
-            out_channels=d_head,
+            out_channels=d_hidden_feat // n_heads,
             heads=n_heads,
             dropout=0.5,
             edge_dim=1,
         )
         self.edge_index = edge_index
         self.edge_attr = edge_attr
-        self.fc_out = nn.Linear(in_features=self.d_hidden, out_features=d_hidden_feat)
 
     def forward(self, x: torch.Tensor, ste):
         b, l, n, d = x.shape
@@ -48,21 +44,12 @@ class GATWrapper(nn.Module):
         # features (batch, seq, n_nodes, d_hidden_feat+d_hidden_pos)
         h = torch.cat([x, ste], dim=-1)
 
-        h = rearrange(h, "b l n d -> (b l) n d")
+        h = rearrange(h, "(b l) n d -> (b l n) d")
 
-        h = torch.stack(
-            [
-                self.gat_layer(
-                    g,
-                    edge_index=self.edge_index,
-                    edge_attr=self.edge_attr,
-                )
-                for g in h
-            ]
-        )
+        h = self.gat_layer(h, edge_index=self.edge_index, edge_attr=self.edge_attr)
 
-        h = rearrange(h, "(b l) n d -> b l n d", b=b)
-        return self.fc_out(h)
+        h = rearrange(h, "(b l n) d -> b l n d", b=b, n=n)
+        return h
 
 
 class SpatioTemporalGraphAttention(nn.Module):
