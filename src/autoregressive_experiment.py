@@ -353,15 +353,16 @@ class AutoregressiveExperiment:
         :return:
         """
         tag = binascii.b2a_hex(os.urandom(3)).decode("utf-8")
+        auto_connect_frameworks = False
+        if self.opt["save_models"]:
+            auto_connect_frameworks = {"pytorch" : ['best_model.pt']}
         self.task = Task.init(
             project_name="Traffic Forecasting - ADN",
             task_name=f"Experiment {tag}",
             task_type=TaskTypes.training,
             reuse_last_task_id=False,
             output_uri="s3://traffic-models",
-            auto_connect_frameworks={
-                "pytorch" : ['best_model.pt']
-            }
+            auto_connect_frameworks=auto_connect_frameworks
         )
         self.clearml_logger = self.task.logger
 
