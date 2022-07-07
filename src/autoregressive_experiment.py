@@ -353,16 +353,16 @@ class AutoregressiveExperiment:
         :return:
         """
         tag = binascii.b2a_hex(os.urandom(3)).decode("utf-8")
-        auto_connect_frameworks = False
+        self.auto_connect_frameworks = False
         if self.opt["save_models"]:
-            auto_connect_frameworks = {"pytorch" : ['best_model.pt']}
+            self.auto_connect_frameworks = {"pytorch" : ['best_model.pt']}
         self.task = Task.init(
             project_name="Traffic Forecasting - ADN",
             task_name=f"Experiment {tag}",
             task_type=TaskTypes.training,
             reuse_last_task_id=False,
             output_uri="s3://traffic-models",
-            auto_connect_frameworks=auto_connect_frameworks
+            auto_connect_frameworks=self.auto_connect_frameworks
         )
         self.clearml_logger = self.task.logger
 
@@ -525,7 +525,8 @@ class AutoregressiveExperiment:
                 self.best_val_metric = mean_valid_rmse
                 self.best_model_info = {"Epoch": epoch}
                 torch.save(self.best_model.state_dict(), self.model_path)
-                self.task.update_output_model(self.model_path)
+                if self.auto_connect_frameworks:
+                    self.task.update_output_model(self.model_path)
 
             self.scheduler.step()
             early_stopping(valid_loss, self.model)
@@ -538,20 +539,23 @@ class AutoregressiveExperiment:
                                  f"Std: {np.std(train_times):.3f}")
                 self.logger.info(f"Valid time per epoch - Mean: {np.mean(valid_times):.2f},"
                                  f"Std: {np.std(valid_times):.3f}")
-                self.task.update_output_model(self.model_path)
+                if self.auto_connect_frameworks:
+                    self.task.update_output_model(self.model_path)
                 break
 
         self.logger.info(
             f"Best epoch: {self.best_model_info['Epoch']}. Mean RMSE: {self.best_val_metric}"
         )
         if not early_stopping.early_stop:
-            torch.save(self.best_model.state_dict(), self.model_path)
+            if self.auto_connect_frameworks:
+                torch.save(self.best_model.state_dict(), self.model_path)
             # self.task.update_output_model(self.model_path, "Model")
             self.logger.info(f"Training time per epoch - Mean: {np.mean(train_times):.2f}, "
                              f"Std: {np.std(train_times):.3f}")
             self.logger.info(f"Valid time per epoch - Mean: {np.mean(valid_times):.2f},"
                              f"Std: {np.std(valid_times):.3f}")
-        self.task.update_output_model(self.model_path)
+        if self.auto_connect_frameworks:
+            self.task.update_output_model(self.model_path)
 
     def test(self):
         test_rmses = []

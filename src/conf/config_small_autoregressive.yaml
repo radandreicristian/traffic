@@ -82,3 +82,5 @@ normalize_all: False
 normalized_loss: False
 
 autoregressive_validation: False
+
+save_models: False
