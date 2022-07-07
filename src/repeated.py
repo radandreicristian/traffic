@@ -4,6 +4,7 @@ import os
 import hydra
 import torch
 from omegaconf import DictConfig
+from pytorch_lightning import seed_everything
 
 from src.autoregressive_experiment import AutoregressiveExperiment
 
@@ -11,6 +12,7 @@ from src.autoregressive_experiment import AutoregressiveExperiment
 @hydra.main(config_path="conf", config_name="config_full_autoregressive.yaml")
 def main(config: DictConfig):
     for i in range(10):
+        seed_everything()
         experiment = AutoregressiveExperiment(config)
         experiment.run()
 
