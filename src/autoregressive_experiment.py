@@ -101,6 +101,13 @@ class AutoregressiveExperiment:
                 title=title, value=value, series=series, iteration=iteration
             )
 
+    def log_scalar(self, metric: str, stage: str, value: Union[int, float], iteration: int):
+        title = f"{stage} {metric}"
+        self.clearml_logger.report_scalar(title=title,
+                                          value=value,
+                                          series=title,
+                                          iteration=iteration)
+
     def print_model_params(self) -> None:
         """
         Prints the trainable parameters of the model.
@@ -439,6 +446,8 @@ class AutoregressiveExperiment:
         early_stopping = EarlyStopping(
             checkpoint_path=self.model_path, patience=patience
         )
+        train_times = []
+        valid_times = []
         for epoch in range(self.opt["n_epochs"]):
             if self.attention_type == "group":
                 self.model.set_partitions()
@@ -446,8 +455,8 @@ class AutoregressiveExperiment:
             train_maes = []
             train_mapes = []
             train_losses = []
+            train_start_time = time.time()
             for idx, batch in enumerate(self.train_dataloader):
-                start_time = time.time()
                 batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
                 loss, metrics = self.train_step(batch=batch)
 
@@ -455,16 +464,9 @@ class AutoregressiveExperiment:
                 train_rmses.append(metrics["rmses"])
                 train_maes.append(metrics["maes"])
                 train_mapes.append(metrics["mapes"])
-
-                end_time = time.time()
-
-                if idx % self.batch_log_frequency == 0:
-                    self.logger.info(
-                        f"[Train|Ep.{epoch}|B.{idx}|{(end_time - start_time):.1f}s]: "
-                        f"Loss {loss:.2f}"
-                    )
                 del loss, metrics
-
+            train_time = time.time() - train_start_time
+            train_times.append(train_time)
             train_loss = float(np.mean(train_losses))
             train_rmses = self.mean_metric(train_rmses)
             train_maes = self.mean_metric(train_maes)
@@ -473,6 +475,10 @@ class AutoregressiveExperiment:
             self.clearml_logger.report_scalar(
                 "Losses", value=train_loss, series="Train Loss", iteration=epoch
             )
+            self.clearml_logger.report_scalar(
+                "Times", value=train_time, series="Train Times", iteration=epoch
+            )
+
             self.log_metric("RMSE", "Train", values=train_rmses, iteration=epoch)
             self.log_metric("MAE", "Train", values=train_maes, iteration=epoch)
             self.log_metric("MAPE", "Train", values=train_mapes, iteration=epoch)
@@ -484,14 +490,16 @@ class AutoregressiveExperiment:
             valid_mapes = []
             valid_losses = []
 
+            validation_start_time = time.time()
             for idx, batch in enumerate(self.valid_dataloader):
                 batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
                 loss, metrics = self.valid_step(batch=batch)
-
                 valid_losses.append(loss)
                 valid_rmses.append(metrics["rmses"])
                 valid_maes.append(metrics["maes"])
                 valid_mapes.append(metrics["mapes"])
+            valid_time = time.time() - validation_start_time
+            valid_times.append(valid_time)
 
             valid_loss = float(np.mean(valid_losses))
             valid_rmses = self.mean_metric(valid_rmses)
@@ -500,6 +508,9 @@ class AutoregressiveExperiment:
 
             self.clearml_logger.report_scalar(
                 "Losses", value=valid_loss, series="Validation Loss", iteration=epoch
+            )
+            self.clearml_logger.report_scalar(
+                "Times", value=valid_time, series="Validation Times", iteration=epoch
             )
             self.log_metric("RMSE", "Validation", values=valid_rmses, iteration=epoch)
             self.log_metric("MAE", "Validation", values=valid_maes, iteration=epoch)
@@ -522,6 +533,10 @@ class AutoregressiveExperiment:
                     f"Early stopping triggered after epoch {epoch}. No valid loss improvement in the "
                     f"last {early_stopping.patience} epochs."
                 )
+                self.logger.info(f"Training time per epoch - Mean: {np.mean(train_times):.2f}, "
+                                 f"Std: {np.std(train_times):.3f}")
+                self.logger.info(f"Valid time per epoch - Mean: {np.mean(valid_times):.2f},"
+                                 f"Std: {np.std(valid_times):.3f}")
                 self.task.update_output_model(self.model_path)
                 break
 
@@ -531,14 +546,22 @@ class AutoregressiveExperiment:
         if not early_stopping.early_stop:
             torch.save(self.best_model.state_dict(), self.model_path)
             # self.task.update_output_model(self.model_path, "Model")
+            self.logger.info(f"Training time per epoch - Mean: {np.mean(train_times):.2f}, "
+                             f"Std: {np.std(train_times):.3f}")
+            self.logger.info(f"Valid time per epoch - Mean: {np.mean(valid_times):.2f},"
+                             f"Std: {np.std(valid_times):.3f}")
         self.task.update_output_model(self.model_path)
 
     def test(self):
         test_rmses = []
         test_maes = []
         test_mapes = []
+        test_times = []
         for idx, batch in enumerate(self.test_dataloader):
+            test_start_time = time.time()
             batch = [{k: v.to(self.device) for k, v in e.items()} for e in batch]
+            test_total_time = time.time() - test_start_time
+            test_times.append(test_total_time)
             metrics = self.test_step(batch=batch)
             test_rmses.append(metrics["rmses"])
             test_maes.append(metrics["maes"])
@@ -552,7 +575,8 @@ class AutoregressiveExperiment:
         self.log_metric("MAE", "Test", values=test_maes, iteration=1)
         self.log_metric("MAPE", "Test", values=test_mapes, iteration=1)
         self.logger.info("Evaluating on test data complete.")
-
+        self.logger.info(f"Test time per sample - Mean: {np.mean(test_times)}, Std: "
+                         f"{np.std(test_times)}")
         # this is for optuna
         self.test_rmses = test_rmses
 

@@ -202,7 +202,7 @@ class TrafficDataModule(pl.LightningDataModule):
         """
         return DataLoader(
             self.test_dataset,
-            batch_size=self.test_batch_size,
+            batch_size=1,
             num_workers=2,
             collate_fn=self.collate_fn,
         )
