@@ -1,6 +1,8 @@
 import binascii
 import logging
 import os
+import random
+import sys
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Union, Iterable, AnyStr
@@ -71,6 +73,9 @@ class AutoregressiveExperiment:
         self.scheduler = None
         self.normalized_loss = opt.get("normalized_loss")
         self.autoregressive_validation = opt.get("autoregressive_validation")
+        # seed = random.randint(-sys.maxsize, sys.maxsize)
+        # print(f"Setting random seed to {seed}")
+        Task.set_random_seed(False)
 
     @staticmethod
     def pretty_rmses(rmses: Dict[int, float]) -> str:
@@ -352,18 +357,20 @@ class AutoregressiveExperiment:
         Initializes the dataset, datamodule, experiment versioning,
         :return:
         """
-        tag = binascii.b2a_hex(os.urandom(3)).decode("utf-8")
+        tag = f"adn - {self.opt['dataset']} - {self.opt['attention_type']}"
         self.auto_connect_frameworks = False
         if self.opt["save_models"]:
             self.auto_connect_frameworks = {"pytorch" : ['best_model.pt']}
+
         self.task = Task.init(
             project_name="Traffic Forecasting - ADN",
-            task_name=f"Experiment {tag}",
+            task_name=f"{tag}",
             task_type=TaskTypes.training,
             reuse_last_task_id=False,
             output_uri="s3://traffic-models",
             auto_connect_frameworks=self.auto_connect_frameworks
         )
+
         self.clearml_logger = self.task.logger
 
         self.setup_data()
