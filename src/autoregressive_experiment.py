@@ -393,11 +393,12 @@ class AutoregressiveExperiment:
         model_tag = self.opt["model_type"]
         self.attention_type = self.opt["attention_type"]
 
-        attention_kwargs = self.opt["attention_config"].get(self.attention_type, {})
-        try:
-            model_type = models[model_tag]
-        except KeyError:
-            raise
+        attention_kwargs = dict(self.opt["attention_config"].get(self.attention_type, {}))
+
+        if self.attention_type == "linformer":
+            attention_kwargs["seq_len"] = self.opt["n_nodes"]
+
+        model_type = models[model_tag]
 
         model_kwargs = {
             "d_features": self.opt["d_features"],
